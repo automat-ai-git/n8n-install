@@ -118,7 +118,7 @@ x-init-ollama: &init-ollama
   entrypoint: /bin/sh
   command:
     - "-c"
-    - "sleep 3; OLLAMA_HOST=ollama:11434 ollama pull qwen2.5:7b-instruct-q4_K_M; OLLAMA_HOST=ollama:11434 ollama pull nomic-embed-text"
+    - "sleep 3; OLLAMA_HOST=ollama:11434 ollama pull qwen2.5:0.5b; OLLAMA_HOST=ollama:11434 ollama pull bge-m3"
 
 # Worker-runner anchor for sidecar pattern (runner connects to worker via localhost)
 x-n8n-worker-runner: &service-n8n-worker-runner
@@ -239,6 +239,7 @@ services:
       - qdrant_storage:/qdrant/storage
     environment:
       QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY}
+      QDRANT__SERVICE__JWT_RBAC: ${QDRANT_MULTITENANCY}
     expose:
       - "6333"
 
