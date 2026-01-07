@@ -1,4 +1,4 @@
-.PHONY: help install update update-preview clean clean-all logs status monitor restart show-restarts doctor switch-beta switch-stable
+.PHONY: help install update update-preview clean clean-all logs status monitor restart show-restarts doctor switch-beta switch-stable import
 
 PROJECT_NAME := localai
 
@@ -18,6 +18,8 @@ help:
 	@echo "  make restart           Restart all services"
 	@echo "  make show-restarts     Show restart count per container"
 	@echo "  make doctor            Run system diagnostics"
+	@echo "  make import            Import n8n workflows from backup"
+	@echo "  make import n=10       Import first N workflows only"
 	@echo ""
 	@echo "  make switch-beta       Switch to beta (develop branch)"
 	@echo "  make switch-stable     Switch to stable (main branch)"
@@ -75,3 +77,10 @@ switch-stable:
 	git restore docker-compose.yml
 	git checkout main
 	sudo bash ./scripts/update.sh
+
+import:
+ifdef n
+	docker compose -p $(PROJECT_NAME) run --rm -e FORCE_IMPORT=true -e IMPORT_LIMIT=$(n) n8n-import
+else
+	docker compose -p $(PROJECT_NAME) run --rm -e FORCE_IMPORT=true n8n-import
+endif

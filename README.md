@@ -312,6 +312,8 @@ The project includes a Makefile for simplified command execution:
 | `make monitor`          | Live CPU/memory monitoring                               |
 | `make restart`          | Restart all services                                     |
 | `make show-restarts`    | Show restart count per container                         |
+| `make import`           | Import n8n workflows from backup                         |
+| `make import n=10`      | Import first N workflows only                            |
 
 ### Diagnostics
 
