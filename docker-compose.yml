@@ -818,7 +818,7 @@ services:
       NEXT_PUBLIC_UPLOAD_DIRECTORY: "/uploads"
       REDIS_URL: "redis://redis:6379"
       STORAGE_PROVIDER: "local"
-      TEMPORAL_UIADDRESS: temporal:7233
+      TEMPORAL_ADDRESS: temporal:7233
       UPLOAD_DIRECTORY: "/uploads"
       # Social Media API Settings
       X_API_KEY: ${X_API_KEY}
