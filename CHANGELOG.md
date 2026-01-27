@@ -1,11 +1,29 @@
 # Changelog
 
-All notable changes to this project are documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
 ## [Unreleased]
+
+## [1.2.2] - 2026-01-26
+
+### Fixed
+- **Custom TLS** - Fix duplicate hostname error when using custom certificates. Changed architecture from generating separate site blocks to using a shared TLS snippet that all services import.
+
+## [1.2.1] - 2026-01-16
+
+### Added
+- **Temporal** - Temporal server and UI for Postiz workflow orchestration (#33)
+
+## [1.2.0] - 2026-01-12
+
+### Added
+- Changelog section on Welcome Page dashboard
+
+## [1.1.0] - 2026-01-11
+
+### Added
+- **Custom TLS certificates** - Support for corporate/internal certificates via `caddy-addon/` mechanism
+- New `make stop` and `make start` commands for stopping/starting all services without restart
+- New `make setup-tls` command and `scripts/setup_custom_tls.sh` helper script for easy certificate configuration
+- New `make git-pull` command for fork workflows - merges from upstream instead of hard reset
 
 ## [1.0.0] - 2026-01-07
 
@@ -211,3 +229,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Langfuse - LLM observability and analytics platform
 - Initial fork from coleam00/local-ai-packager with enhanced service support
+
+---
+
+All notable changes to this project are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).

@@ -314,13 +314,15 @@ ${SERVICE_NAME_UPPER}_PASSWORD=
 ${SERVICE_NAME_UPPER}_PASSWORD_HASH=
 ```
 
-### 3.3 GOST_NO_PROXY (if using proxy-env)
+### 3.3 GOST_NO_PROXY (REQUIRED for ALL services)
 
-Add service to comma-separated list:
+**CRITICAL:** Add ALL new service container names to the comma-separated list to prevent internal Docker traffic from going through the proxy:
 
 ```dotenv
 GOST_NO_PROXY=localhost,127.0.0.1,...existing...,$ARGUMENTS
 ```
+
+This applies to ALL services, not just those using `<<: *proxy-env`. Internal service-to-service communication must bypass the proxy.
 
 ---
 
@@ -706,6 +708,7 @@ bash -n scripts/07_final_report.sh
 - [ ] `docker-compose.yml`: caddy environment vars (if external)
 - [ ] `Caddyfile`: reverse proxy block (if external)
 - [ ] `.env.example`: hostname added
+- [ ] `.env.example`: service added to `GOST_NO_PROXY` (ALL internal services must be listed)
 - [ ] `scripts/03_generate_secrets.sh`: password in `VARS_TO_GENERATE`
 - [ ] `scripts/04_wizard.sh`: service in `base_services_data`
 - [ ] `scripts/generate_welcome_page.sh`: `SERVICES_ARRAY` entry
@@ -722,7 +725,6 @@ bash -n scripts/07_final_report.sh
 
 ### If Outbound Proxy (AI API calls)
 - [ ] `docker-compose.yml`: `<<: *proxy-env` in environment
-- [ ] `.env.example`: service added to `GOST_NO_PROXY`
 - [ ] `docker-compose.yml`: healthcheck bypasses proxy
 
 ### If Database Required

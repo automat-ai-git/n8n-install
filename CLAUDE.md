@@ -64,8 +64,9 @@ The update flow (`scripts/update.sh`) similarly orchestrates: git fetch + reset 
 
 ```bash
 make install           # Full installation (runs scripts/install.sh)
-make update            # Update system and services
+make update            # Update system and services (resets to origin)
 make update-preview    # Preview available updates (dry-run)
+make git-pull          # Update for forks (merges from upstream/main)
 make clean             # Remove unused Docker resources (preserves data)
 make clean-all         # Remove ALL Docker resources including data (DANGEROUS)
 
@@ -74,10 +75,13 @@ make logs s=<service>  # View logs for specific service
 make status            # Show container status
 make monitor           # Live CPU/memory monitoring (docker stats)
 make restart           # Restart all services
+make stop              # Stop all services
+make start             # Start all services
 make show-restarts     # Show restart count per container
 make doctor            # Run system diagnostics (DNS, SSL, containers, disk, memory)
 make import            # Import n8n workflows from backup
 make import n=10       # Import first N workflows only
+make setup-tls         # Configure custom TLS certificates
 
 make switch-beta       # Switch to develop branch and update
 make switch-stable     # Switch to main branch and update

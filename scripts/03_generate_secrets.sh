@@ -55,6 +55,7 @@ EMAIL_VARS=(
     "PROMETHEUS_USERNAME"
     "RAGAPP_USERNAME"
     "SEARXNG_USERNAME"
+    "TEMPORAL_UI_USERNAME"
     "WAHA_DASHBOARD_USERNAME"
     "WEAVIATE_USERNAME"
     "WELCOME_USERNAME"
@@ -114,6 +115,7 @@ declare -A VARS_TO_GENERATE=(
     ["RAGFLOW_REDIS_PASSWORD"]="password:32"
     ["SEARXNG_PASSWORD"]="password:32" # Added SearXNG admin password
     ["SECRET_KEY_BASE"]="base64:64" # 48 bytes -> 64 chars
+    ["TEMPORAL_UI_PASSWORD"]="password:32" # Temporal UI basic auth password
     ["VAULT_ENC_KEY"]="alphanum:32"
     ["WAHA_DASHBOARD_PASSWORD"]="password:32"
     ["WEAVIATE_API_KEY"]="secret:48" # API Key for Weaviate service (36 bytes -> 48 chars base64)
@@ -564,7 +566,7 @@ if [[ -n "$template_no_proxy" ]]; then
 fi
 
 # Hash passwords using caddy with bcrypt (consolidated loop)
-SERVICES_NEEDING_HASH=("PROMETHEUS" "SEARXNG" "COMFYUI" "PADDLEOCR" "RAGAPP" "LT" "DOCLING" "WELCOME")
+SERVICES_NEEDING_HASH=("PROMETHEUS" "SEARXNG" "COMFYUI" "PADDLEOCR" "RAGAPP" "LT" "DOCLING" "TEMPORAL_UI" "WELCOME")
 
 for service in "${SERVICES_NEEDING_HASH[@]}"; do
     password_var="${service}_PASSWORD"

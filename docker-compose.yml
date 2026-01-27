@@ -33,8 +33,16 @@ volumes:
   ragflow_minio_data:
   ragflow_mysql_data:
   ragflow_redis_data:
+  temporal_elasticsearch_data:
   valkey-data:
   weaviate_data:
+
+# Shared logging configuration for services
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "1m"
+    max-file: "1"
 
 # Shared proxy configuration for services that need outbound proxy support
 x-proxy-env: &proxy-env
@@ -275,11 +283,7 @@ services:
     container_name: nocodb
     profiles: ["nocodb"]
     restart: unless-stopped
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "1m"
-        max-file: "1"
+    logging: *default-logging
     environment:
       NC_AUTH_JWT_SECRET: ${NOCODB_JWT_SECRET}
       NC_DB: pg://postgres:5432?u=postgres&p=${POSTGRES_PASSWORD}&d=nocodb
@@ -310,6 +314,7 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./caddy-addon:/etc/caddy/addons:ro
+      - ./certs:/etc/caddy/certs:ro
       - ./welcome:/srv/welcome:ro
       - caddy-data:/data:rw
       - caddy-config:/config:rw
@@ -339,6 +344,9 @@ services:
       PORTAINER_HOSTNAME: ${PORTAINER_HOSTNAME}
       DATABASUS_HOSTNAME: ${DATABASUS_HOSTNAME}
       POSTIZ_HOSTNAME: ${POSTIZ_HOSTNAME}
+      TEMPORAL_UI_HOSTNAME: ${TEMPORAL_UI_HOSTNAME}
+      TEMPORAL_UI_USERNAME: ${TEMPORAL_UI_USERNAME}
+      TEMPORAL_UI_PASSWORD_HASH: ${TEMPORAL_UI_PASSWORD_HASH}
       PROMETHEUS_HOSTNAME: ${PROMETHEUS_HOSTNAME}
       PROMETHEUS_PASSWORD_HASH: ${PROMETHEUS_PASSWORD_HASH}
       PROMETHEUS_USERNAME: ${PROMETHEUS_USERNAME}
@@ -361,11 +369,7 @@ services:
       - ALL
     cap_add:
       - NET_BIND_SERVICE
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "1m"
-        max-file: "1"
+    logging: *default-logging
 
   cloudflared:
     image: cloudflare/cloudflared:latest
@@ -375,11 +379,7 @@ services:
     command: tunnel --no-autoupdate run
     environment:
       TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "1m"
-        max-file: "1"
+    logging: *default-logging
 
   gost:
     image: gogost/gost:latest
@@ -397,11 +397,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "1m"
-        max-file: "1"
+    logging: *default-logging
 
   langfuse-worker:
     image: langfuse/langfuse-worker:3
@@ -553,11 +549,7 @@ services:
       - SETGID
       - SETUID
       - DAC_OVERRIDE
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "1m"
-        max-file: "1"
+    logging: *default-logging
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 3s
@@ -580,11 +572,7 @@ services:
       - CHOWN
       - SETGID
       - SETUID
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "1m"
-        max-file: "1"
+    logging: *default-logging
 
   ollama-cpu:
     profiles: ["cpu"]
@@ -778,6 +766,70 @@ services:
       - portainer_data:/data
       - ${DOCKER_SOCKET_LOCATION:-/var/run/docker.sock}:/var/run/docker.sock
 
+  temporal-elasticsearch:
+    image: elasticsearch:7.17.27
+    container_name: temporal-elasticsearch
+    profiles: ["postiz"]
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      cluster.routing.allocation.disk.threshold_enabled: "true"
+      cluster.routing.allocation.disk.watermark.low: 512mb
+      cluster.routing.allocation.disk.watermark.high: 256mb
+      cluster.routing.allocation.disk.watermark.flood_stage: 128mb
+      discovery.type: single-node
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+      xpack.security.enabled: "false"
+    volumes:
+      - temporal_elasticsearch_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -qE '\"status\":\"(green|yellow)\"'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  temporal:
+    image: temporalio/auto-setup:latest
+    container_name: temporal
+    profiles: ["postiz"]
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      DB: postgres12
+      POSTGRES_USER: postgres
+      POSTGRES_PWD: ${POSTGRES_PASSWORD}
+      POSTGRES_SEEDS: postgres
+      DB_PORT: 5432
+      TEMPORAL_NAMESPACE: default
+      ENABLE_ES: "true"
+      ES_SEEDS: temporal-elasticsearch
+      ES_VERSION: v7
+    depends_on:
+      postgres:
+        condition: service_healthy
+      temporal-elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "temporal operator cluster health --address $(hostname -i):7233 | grep -q SERVING || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  temporal-ui:
+    image: temporalio/ui:latest
+    container_name: temporal-ui
+    profiles: ["postiz"]
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_CORS_ORIGINS: http://localhost:3000
+    depends_on:
+      temporal:
+        condition: service_healthy
+
   postiz:
     image: ghcr.io/gitroomhq/postiz-app:latest
     container_name: postiz
@@ -796,6 +848,7 @@ services:
       NEXT_PUBLIC_UPLOAD_DIRECTORY: "/uploads"
       REDIS_URL: "redis://redis:6379"
       STORAGE_PROVIDER: "local"
+      TEMPORAL_ADDRESS: temporal:7233
       UPLOAD_DIRECTORY: "/uploads"
       # Social Media API Settings
       X_API_KEY: ${X_API_KEY}
@@ -837,17 +890,15 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      temporal:
+        condition: service_healthy
 
   databasus:
     image: databasus/databasus:latest
     container_name: databasus
     profiles: ["databasus"]
     restart: unless-stopped
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "1m"
-        max-file: "1"
+    logging: *default-logging
     volumes:
       - databasus_data:/databasus-data
     healthcheck:
@@ -1044,11 +1095,7 @@ services:
       - SETGID
       - SETUID
       - DAC_OVERRIDE
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "1m"
-        max-file: "1"
+    logging: *default-logging
     healthcheck:
       test: ["CMD", "valkey-cli", "-a", "${RAGFLOW_REDIS_PASSWORD}", "ping"]
       interval: 3s

@@ -30,6 +30,8 @@ INIT_DB_DATABASES=(
     "lightrag"
     "nocodb"
     "postiz"
+    "temporal"
+    "temporal_visibility"
     "waha"
 )
 

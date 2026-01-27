@@ -137,9 +137,10 @@ Get started quickly with a vast library of pre-built automations (optional impor
 1.  **Domain Name:** You need a registered domain name (e.g., `yourdomain.com`).
 2.  **DNS Configuration:** Before running the installation script, you **must** configure DNS A-record for your domain, pointing to the public IP address of the server where you'll install this system. Replace `yourdomain.com` with your actual domain:
     - **Wildcard Record:** `A *.yourdomain.com` -> `YOUR_SERVER_IP`
-3.  **Server:** Minimum server system requirements: Ubuntu 24.04 LTS, 64-bit.
-    - For running **all available services**: at least **20 GB Memory / 4 CPU Cores / 60 GB Disk Space**.
-    - For a minimal setup with **n8n, Monitoring, Databasus and Portainer**: **4 GB Memory / 2 CPU Cores / 40 GB Disk Space**.
+3.  **VPS (Virtual Private Server):** A dedicated VPS with a public IP address is required. Home servers, shared hosting, or localhost setups are not supported.
+    - **Operating System:** Ubuntu 24.04 LTS, 64-bit
+    - For a minimal setup with **n8n, Monitoring, Databasus and Portainer**: **4 GB Memory / 2 CPU Cores / 40 GB Disk Space**
+    - For running **all available services**: at least **20 GB Memory / 4 CPU Cores / 60 GB Disk Space**
 
 ### Running the Install
 
@@ -271,6 +272,12 @@ To update all components (n8n, Open WebUI, etc.) to their latest versions and in
 make update
 ```
 
+**For forks**: If you maintain a fork with custom changes and want to merge updates from upstream instead of resetting:
+
+```bash
+make git-pull
+```
+
 This script will:
 
 1.  Fetch the latest updates for the installer from the Git repository.
@@ -298,8 +305,9 @@ The project includes a Makefile for simplified command execution:
 | Command               | Description                                          |
 | --------------------- | ---------------------------------------------------- |
 | `make install`        | Full installation                                    |
-| `make update`         | Update system and services                           |
+| `make update`         | Update system and services (resets to origin)        |
 | `make update-preview` | Preview available updates without applying (dry-run) |
+| `make git-pull`       | Update for forks (merges from upstream/main)         |
 | `make clean`          | Remove unused Docker resources                       |
 
 ### Monitoring & Logs
@@ -311,15 +319,18 @@ The project includes a Makefile for simplified command execution:
 | `make status`           | Show container status                                    |
 | `make monitor`          | Live CPU/memory monitoring                               |
 | `make restart`          | Restart all services                                     |
+| `make stop`             | Stop all services                                        |
+| `make start`            | Start all services                                       |
 | `make show-restarts`    | Show restart count per container                         |
 | `make import`           | Import n8n workflows from backup                         |
 | `make import n=10`      | Import first N workflows only                            |
 
-### Diagnostics
+### Diagnostics & Configuration
 
-| Command       | Description                                                        |
-| ------------- | ------------------------------------------------------------------ |
-| `make doctor` | Run system diagnostics (checks DNS, SSL, containers, disk, memory) |
+| Command          | Description                                                        |
+| ---------------- | ------------------------------------------------------------------ |
+| `make doctor`    | Run system diagnostics (checks DNS, SSL, containers, disk, memory) |
+| `make setup-tls` | Configure custom TLS certificates for corporate/internal use       |
 
 Run `make help` for the full list of available commands.
 
@@ -356,6 +367,18 @@ Here are solutions to common issues you might encounter:
 
 - **VPN Conflicts:** Using a VPN might interfere with downloading Docker images. If you encounter issues pulling images, try temporarily disabling your VPN.
 - **Server Requirements:** If you experience unexpected issues, ensure your server meets the minimum hardware and operating system requirements (including version) as specified in the "Prerequisites before Installation" section.
+
+### Update Script Not Working
+
+- **Symptom:** The `make update` command fails, shows errors, or doesn't apply the latest changes.
+- **Cause:** This can happen if your local repository has diverged from the upstream, has uncommitted changes, or is in an inconsistent state.
+- **Solution:** Run the following command to force-sync your local installation with the latest version:
+
+  ```bash
+  git config pull.rebase true && git fetch origin && git checkout main && git reset --hard "origin/main" && make update
+  ```
+
+  **Warning:** This will discard any local changes you've made to the installer files. If you've customized any scripts or configurations, back them up first.
 
 ## Recommended Reading
 

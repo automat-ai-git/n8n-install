@@ -32,6 +32,23 @@ require_file "$PROJECT_ROOT/docker-compose.yml" "docker-compose.yml file not fou
 require_file "$PROJECT_ROOT/Caddyfile" "Caddyfile not found in project root. Reverse proxy might not work."
 require_file "$PROJECT_ROOT/start_services.py" "start_services.py file not found in project root."
 
+# Remove legacy custom-tls.conf that causes duplicate host errors
+# This is needed for users upgrading from older versions
+# TODO: Remove this cleanup block after v3.0 release (all users migrated)
+OLD_TLS_CONFIG="$PROJECT_ROOT/caddy-addon/custom-tls.conf"
+if [[ -f "$OLD_TLS_CONFIG" ]]; then
+    log_warning "Removing obsolete custom-tls.conf (causes duplicate host errors)"
+    rm -f "$OLD_TLS_CONFIG"
+fi
+
+# Ensure TLS snippet exists (auto-create from template if missing)
+TLS_SNIPPET="$PROJECT_ROOT/caddy-addon/tls-snippet.conf"
+TLS_TEMPLATE="$PROJECT_ROOT/caddy-addon/tls-snippet.conf.example"
+if [[ ! -f "$TLS_SNIPPET" ]] && [[ -f "$TLS_TEMPLATE" ]]; then
+    cp "$TLS_TEMPLATE" "$TLS_SNIPPET"
+    log_info "Created tls-snippet.conf from template (Let's Encrypt mode)"
+fi
+
 # Check if Docker daemon is running
 if ! docker info > /dev/null 2>&1; then
   log_error "Docker daemon is not running. Please start Docker and try again."
