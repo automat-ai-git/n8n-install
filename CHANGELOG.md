@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [1.2.4] - 2026-01-30
+
+### Fixed
+- **Postiz** - Fix `BACKEND_INTERNAL_URL` to use `localhost` instead of Docker hostname (internal nginx requires localhost)
+
 ## [1.2.3] - 2026-01-29
 
 ### Fixed
