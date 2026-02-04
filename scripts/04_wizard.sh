@@ -215,7 +215,7 @@ if [ $gost_selected -eq 1 ]; then
     EXISTING_UPSTREAM=$(read_env_var "GOST_UPSTREAM_PROXY")
 
     GOST_UPSTREAM_INPUT=$(wt_input "Gost Upstream Proxy" \
-        "Enter your external proxy URL for geo-bypass.\n\nExamples:\n  socks5://user:pass@proxy.com:1080\n  http://user:pass@proxy.com:8080\n\nThis proxy should be located outside restricted regions." \
+        "Enter your external proxy URL for geo-bypass.\n\nExamples:\n  socks5://user:pass@proxy.com:1080\n  http://user:pass@proxy.com:8080\n\nIMPORTANT: For HTTP proxies use http://, NOT https://.\nThe protocol refers to proxy type, not connection security.\n\nThis proxy should be located outside restricted regions." \
         "$EXISTING_UPSTREAM") || true
 
     if [ -n "$GOST_UPSTREAM_INPUT" ]; then

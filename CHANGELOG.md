@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+## [1.2.5] - 2026-02-03
+
+### Fixed
+- **n8n** - Use static ffmpeg binaries for Alpine/musl compatibility (fixes glibc errors)
+
+## [1.2.4] - 2026-01-30
+
+### Fixed
+- **Postiz** - Fix `BACKEND_INTERNAL_URL` to use `localhost` instead of Docker hostname (internal nginx requires localhost)
+
+## [1.2.3] - 2026-01-29
+
+### Fixed
+- **Gost proxy** - Add Telegram domains to `GOST_NO_PROXY` bypass list for n8n Telegram triggers
+
 ## [1.2.2] - 2026-01-26
 
 ### Fixed
