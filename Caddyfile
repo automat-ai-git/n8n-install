@@ -214,7 +214,7 @@ import /etc/caddy/addons/site-*.conf
 # SearXNG
 {$SEARXNG_HOSTNAME} {
     import service_tls
-    @protected not remote_ip 127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10
+    @protected not remote_ip 127.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10 #10.0.0.0/8 пока так ограждаю от общего доступа через тоннель
 
     basic_auth @protected {
         {$SEARXNG_USERNAME} {$SEARXNG_PASSWORD_HASH}
