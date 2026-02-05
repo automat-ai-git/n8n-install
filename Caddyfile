@@ -1,13 +1,13 @@
 {
     # Global options - works for both environments
     email {$LETSENCRYPT_EMAIL}
+    import /etc/caddy/addons/global.conf
 }
 
 # Import TLS snippet (must be before service blocks)
 # Default: Let's Encrypt automatic certificates
 # Custom: Run 'make setup-tls' to use your own certificates
 import /etc/caddy/addons/tls-snippet.conf
-import /etc/caddy/addons/global.conf?
 
 # N8N
 {$N8N_HOSTNAME} {
