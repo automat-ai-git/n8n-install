@@ -1,6 +1,7 @@
 {
     # Global options - works for both environments
     email {$LETSENCRYPT_EMAIL}
+# add some ip for trusted info about header and ext ip's
     import /etc/caddy/addons/global.conf
 }
 
@@ -214,7 +215,8 @@ import /etc/caddy/addons/site-*.conf
 # SearXNG
 {$SEARXNG_HOSTNAME} {
     import service_tls
-    @protected not remote_ip 127.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10 #10.0.0.0/8 пока так ограждаю от общего доступа через тоннель
+# all internal ips excluded 10.0.0.0 BUT only first 31 adress included from 10.9.9.0-31
+    @protected not remote_ip 127.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10 10.9.9.0/27
 
     basic_auth @protected {
         {$SEARXNG_USERNAME} {$SEARXNG_PASSWORD_HASH}
