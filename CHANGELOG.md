@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [1.2.6] - 2026-02-10
+
+### Changed
+- **ComfyUI** - Update Docker image to CUDA 12.8 (`cu128-slim`)
+
 ## [1.2.5] - 2026-02-03
 
 ### Fixed

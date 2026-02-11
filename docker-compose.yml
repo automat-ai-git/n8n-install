@@ -909,7 +909,7 @@ services:
       start_period: 60s
 
   comfyui:
-    image: yanwk/comfyui-boot:cu124-slim
+    image: yanwk/comfyui-boot:cu128-slim
     container_name: comfyui
     profiles: ["comfyui"]
     restart: unless-stopped
