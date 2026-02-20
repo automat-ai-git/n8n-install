@@ -178,6 +178,12 @@ fi
 write_env_var "POSTGRES_HOST" "db"
 # ----------------------------------------------------------------
 
+# ----------------------------------------------------------------
+# FROM february 2026  for Supabase additional var set REGION 
+# ----------------------------------------------------------------
+write_env_var "REGION" "us-east-1"
+# ----------------------------------------------------------------
+
 log_success "Service configuration complete. .env updated at $ENV_FILE"
 
 # Cleanup any .bak files
