@@ -28,14 +28,10 @@
 #     command:
 #       - "--path.procfs=/host/proc"
 #       - "--path.sysfs=/host/sys"
-#       # Exclude Windows-mounted drives (/mnt/c, /mnt/d, etc.) and WSL-internal paths
-#       - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc|mnt|usr/lib/wsl)($$|/)"
-#       # Exclude 9p and drvfs filesystem types used by WSL2 for Windows drive passthrough
-#       - "--collector.filesystem.fs-types-exclude=^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs|9p|drvfs)$$"
+#       - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc|mnt|usr/lib/wsl)($|/)"
+#       - "--collector.filesystem.fs-types-exclude=^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs|9p|drvfs)$"
 #
 #   cadvisor:
 #     command:
-#       # Disable disk/diskIO metrics to prevent rootfs traversal into /mnt/* Windows paths
 #       - "--disable_metrics=disk,diskIO,resctrl,tcp,udp,percpu,sched,process"
-#       # Only monitor Docker containers, not all host processes
 #       - "--docker_only=true"
