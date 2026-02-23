@@ -363,6 +363,21 @@ Here are solutions to common issues you might encounter:
   2.  **Delay in applying the new certificate:** There might also be a short delay before the newly obtained certificate from Let's Encrypt is fully applied and recognized by all systems.
 - **Solution:** This is usually a temporary issue and resolves itself. Give it some time. If the warning persists for more than 24 hours, check your Caddy logs for any errors related to certificate acquisition and ensure your DNS settings are correctly pointing your domain to the server's IP address. You can also try clearing your browser's cache or using an incognito/private window to re-check.
 
+### Monitoring Stack Freezes the System on WSL2
+
+- **Symptom:** After enabling the `monitoring` profile on WSL2, Load Average spikes above 900 and the SSH session becomes unresponsive within seconds.
+- **Cause:** Both `node-exporter` and `cAdvisor` are written in Go and traverse mounted filesystems to collect disk metrics. On WSL2 this includes Windows drives (`/mnt/c`, `/mnt/d`, ...) via the `9p`/`drvfs` protocol. `stat()` calls on these paths hang indefinitely, and because Go spawns new goroutines on each scrape interval without cancelling hung ones, load average explodes.
+- **Fix:** The repo includes `docker-compose.override.yml.example` with the fix pre-written but commented out. Docker Compose automatically loads `docker-compose.override.yml` alongside the main file — no script changes needed.
+
+  ```bash
+  # Copy the example override file (only needed once)
+  cp docker-compose.override.yml.example docker-compose.override.yml
+  ```
+
+  Then open `docker-compose.override.yml` and uncomment the `services:` block inside the WSL2 section. Since the file is listed in `.gitignore`, your local change will **not** be overwritten by `make update` or `git pull`.
+
+  > ⚠️ Do **not** apply these flags on native Linux servers — they disable disk metrics in Grafana.
+
 ### General Issues
 
 - **VPN Conflicts:** Using a VPN might interfere with downloading Docker images. If you encounter issues pulling images, try temporarily disabling your VPN.

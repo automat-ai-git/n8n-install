@@ -1,0 +1,41 @@
+# =============================================================================
+# docker-compose.override.yml — Local customizations (gitignored)
+# =============================================================================
+# This file is automatically loaded by Docker Compose alongside docker-compose.yml.
+# It is listed in .gitignore, so your local changes will NOT be overwritten by updates.
+#
+# Use this file to override any service settings for your local environment.
+#
+# -----------------------------------------------------------------------------
+# WSL2 FIX: Monitoring stack (node-exporter + cAdvisor) on WSL2
+# -----------------------------------------------------------------------------
+# SYMPTOM: After enabling the "monitoring" profile on WSL2, load average spikes
+# above 900 and the SSH session freezes within seconds.
+#
+# ROOT CAUSE: Both node-exporter and cAdvisor are written in Go and traverse
+# mounted filesystems to collect disk metrics. In WSL2 this includes Windows
+# drives (/mnt/c, /mnt/d, ...) via the 9p/drvfs protocol. stat() calls on
+# these paths hang indefinitely. Because Go collects metrics on a fixed interval
+# without cancelling timed-out goroutines, each scrape spawns new blocked
+# goroutines — resulting in load average >900 and a frozen SSH session.
+#
+# FIX: Uncomment the block below to apply WSL2-safe flags.
+# This restricts both services from scanning Windows-mounted drives.
+# DO NOT enable on native Linux servers — it disables disk metrics.
+#
+# services:
+#   node-exporter:
+#     command:
+#       - "--path.procfs=/host/proc"
+#       - "--path.sysfs=/host/sys"
+#       # Exclude Windows-mounted drives (/mnt/c, /mnt/d, etc.) and WSL-internal paths
+#       - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc|mnt|usr/lib/wsl)($$|/)"
+#       # Exclude 9p and drvfs filesystem types used by WSL2 for Windows drive passthrough
+#       - "--collector.filesystem.fs-types-exclude=^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs|9p|drvfs)$$"
+#
+#   cadvisor:
+#     command:
+#       # Disable disk/diskIO metrics to prevent rootfs traversal into /mnt/* Windows paths
+#       - "--disable_metrics=disk,diskIO,resctrl,tcp,udp,percpu,sched,process"
+#       # Only monitor Docker containers, not all host processes
+#       - "--docker_only=true"
