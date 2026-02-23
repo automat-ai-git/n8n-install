@@ -359,6 +359,14 @@ get_dify_compose() {
 build_compose_files_array() {
     COMPOSE_FILES=("-f" "$PROJECT_ROOT/docker-compose.yml")
 
+    # WSL2 mode: load override file to restrict node-exporter and cAdvisor from scanning
+    # Windows-mounted drives (/mnt/c etc.), preventing goroutine explosion and system freeze.
+    # Enable by setting WSL2_MODE=true in .env. Do NOT enable on native Linux servers.
+    local wsl_override="$PROJECT_ROOT/docker-compose.wsl.yml"
+    if [[ "${WSL2_MODE:-}" == "true" ]] && [ -f "$wsl_override" ]; then
+        COMPOSE_FILES+=("-f" "$wsl_override")
+    fi
+
     local path
     if path=$(get_n8n_workers_compose); then
         COMPOSE_FILES+=("-f" "$path")
