@@ -410,17 +410,17 @@ These are backed up before `git reset --hard` and restored after.
 
 2. **cAdvisor** (Go): same problem — it traverses `/rootfs` (mapped to host `/`) to collect `disk`, `diskIO`, and `resctrl` metrics, hitting the same `/mnt/*` Windows paths with the same goroutine explosion.
 
-**Fix — WSL2-only override file** (`docker-compose.wsl.yml`):
-The fix is intentionally **not** applied in the main `docker-compose.yml` because it disables disk metrics, which would break monitoring on native Linux servers.
+**Fix — uncomment the WSL2 block in `docker-compose.override.yml`**:
 
-To enable on WSL2, set in `.env`:
-```
-WSL2_MODE=true
-```
+The repo ships `docker-compose.override.yml` (listed in `.gitignore`) with the fix pre-written but commented out. Docker Compose automatically loads this file alongside `docker-compose.yml` — no script changes needed.
 
-`build_compose_files_array()` in `scripts/utils.sh` detects this flag and automatically appends `docker-compose.wsl.yml` to the compose file list. The override:
-- `node-exporter`: extends `--collector.filesystem.mount-points-exclude` to add `/mnt` and `/usr/lib/wsl`; adds `--collector.filesystem.fs-types-exclude` covering `9p` and `drvfs` types.
+To enable on WSL2, open `docker-compose.override.yml` and uncomment the `services:` block inside the WSL2 section. The file contains full instructions.
+
+The uncommented block:
+- `node-exporter`: adds `--collector.filesystem.mount-points-exclude` covering `/mnt` and `/usr/lib/wsl`; adds `--collector.filesystem.fs-types-exclude` covering `9p` and `drvfs` types.
 - `cAdvisor`: adds `--disable_metrics=disk,diskIO,resctrl,tcp,udp,percpu,sched,process` and `--docker_only=true` to prevent rootfs traversal.
+
+Since `docker-compose.override.yml` is gitignored, your local changes survive `git pull` / `make update` automatically.
 
 **DO NOT move these flags into `docker-compose.yml`** — they will break disk metrics on production Linux servers.
 
