@@ -1,4 +1,5 @@
 .DS_Store
+NOTES.md
 .env
 .env.bak
 .env.test

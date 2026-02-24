@@ -30,8 +30,16 @@
 #       - "--path.sysfs=/host/sys"
 #       - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc|mnt|run|init|usr/lib/wsl)($|/)"
 #       - "--collector.filesystem.fs-types-exclude=^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs|9p|drvfs|tmpfs|rootfs)$"
+#       # Disable collectors that hang in WSL2 due to missing/broken netlink support
+#       - "--no-collector.arp"
+#       - "--no-collector.conntrack"
+#       - "--no-collector.wifi"
 #
 #   cadvisor:
 #     command:
 #       - "--disable_metrics=disk,diskIO,resctrl,tcp,udp,percpu,sched,process"
 #       - "--docker_only=true"
+#       # Reduce polling frequency (default 1s is too aggressive for WSL2)
+#       - "--housekeeping_interval=30s"
+#       # Skip root cgroup stats (can take 3-8s to read in WSL2)
+#       - "--disable_root_cgroup_stats=true"
