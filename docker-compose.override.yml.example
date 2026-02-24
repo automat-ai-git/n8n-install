@@ -28,8 +28,8 @@
 #     command:
 #       - "--path.procfs=/host/proc"
 #       - "--path.sysfs=/host/sys"
-#       - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc|mnt|usr/lib/wsl)($|/)"
-#       - "--collector.filesystem.fs-types-exclude=^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs|9p|drvfs)$"
+#       - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc|mnt|run|init|usr/lib/wsl)($|/)"
+#       - "--collector.filesystem.fs-types-exclude=^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs|9p|drvfs|tmpfs|rootfs)$"
 #
 #   cadvisor:
 #     command:
