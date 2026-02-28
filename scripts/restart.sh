@@ -10,6 +10,7 @@
 #   - docker-compose.n8n-workers.yml (if exists and n8n profile active)
 #   - supabase/docker/docker-compose.yml (if exists and supabase profile active)
 #   - dify/docker/docker-compose.yaml (if exists and dify profile active)
+#   - docker-compose.override.yml (if exists, user overrides with highest precedence)
 #
 # Usage: bash scripts/restart.sh
 # =============================================================================
@@ -32,6 +33,20 @@ EXTERNAL_SERVICE_INIT_DELAY=10
 
 # Build compose files array (sets global COMPOSE_FILES)
 build_compose_files_array
+
+# Ensure postiz.env exists if Postiz is enabled (required for volume mount)
+# This is a safety net for cases where restart runs without start_services.py
+# (e.g., git pull + make restart instead of make update)
+if is_profile_active "postiz"; then
+    if [ -d "$PROJECT_ROOT/postiz.env" ]; then
+        log_warning "postiz.env exists as a directory (created by Docker). Removing and recreating as file."
+        rm -rf "$PROJECT_ROOT/postiz.env"
+        touch "$PROJECT_ROOT/postiz.env"
+    elif [ ! -f "$PROJECT_ROOT/postiz.env" ]; then
+        log_warning "postiz.env not found, creating empty file. Run 'make update' to generate full config."
+        touch "$PROJECT_ROOT/postiz.env"
+    fi
+fi
 
 log_info "Restarting services..."
 log_info "Using compose files: ${COMPOSE_FILES[*]}"
@@ -70,6 +85,10 @@ fi
 MAIN_COMPOSE_FILES=("-f" "$PROJECT_ROOT/docker-compose.yml")
 if path=$(get_n8n_workers_compose); then
     MAIN_COMPOSE_FILES+=("-f" "$path")
+fi
+OVERRIDE_COMPOSE="$PROJECT_ROOT/docker-compose.override.yml"
+if [ -f "$OVERRIDE_COMPOSE" ]; then
+    MAIN_COMPOSE_FILES+=("-f" "$OVERRIDE_COMPOSE")
 fi
 
 # Start main services

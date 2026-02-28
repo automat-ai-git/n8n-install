@@ -2,6 +2,36 @@
 
 ## [Unreleased]
 
+## [1.3.3] - 2026-02-27
+
+### Fixed
+- **Postiz** - Generate `postiz.env` file to prevent `dotenv-cli` crash in backend container (#40). Handles edge case where Docker creates the file as a directory, and quotes values to prevent misparses.
+
+## [1.3.2] - 2026-02-27
+
+### Fixed
+- **Docker Compose** - Respect `docker-compose.override.yml` for user customizations (#44). All compose file assembly points now include the override file when present.
+
+## [1.3.1] - 2026-02-27
+
+### Fixed
+- **Installer** - Skip n8n workflow import and worker configuration prompts when n8n profile is not selected
+
+## [1.3.0] - 2026-02-27
+
+### Added
+- **Appsmith** - Low-code platform for building internal tools, dashboards, and admin panels
+
+## [1.2.8] - 2026-02-27
+
+### Fixed
+- **Ragflow** - Fix nginx config mount path (`sites-available/default` → `conf.d/default.conf`) to resolve default "Welcome to nginx!" page (#41)
+
+## [1.2.7] - 2026-02-27
+
+### Fixed
+- **Docker** - Limit parallel image pulls (`COMPOSE_PARALLEL_LIMIT=3`) to prevent `TLS handshake timeout` errors when many services are selected
+
 ## [1.2.6] - 2026-02-10
 
 ### Changed
