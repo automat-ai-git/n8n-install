@@ -23,7 +23,26 @@
 # This restricts both services from scanning Windows-mounted drives.
 # DO NOT enable on native Linux servers — it disables disk metrics.
 #
+
+
 services:
+
+#запрет регистрации пользователей
+   ragflow:
+     environment:
+       REGISTER_ENABLED: "0"
+
+#чуть подольше поднмаем базу для того, чтобы не спешили остальные контейнеры, кто проверяет хэлзичек - postiz например
+   postgres:
+     healthcheck:
+      # Используем родную команду из твоего конфига
+       test: ["CMD-SHELL", "pg_isready -U postgres"]
+       interval: 10s
+       timeout: 5s
+       retries: 12
+       start_period: 20s
+
+#изменение базовых хэлзичеков
    appsmith:
      healthcheck:
        test: ["CMD-SHELL", "http_proxy= https_proxy= HTTP_PROXY= HTTPS_PROXY= curl -f -s http://localhost/api/v1/health || exit 1"]
@@ -42,6 +61,7 @@ services:
        test: ["CMD-SHELL", "python3 -c 'import socket; s = socket.socket(); s.connect((\"localhost\", 9621))' || exit 1"]
        start_period: 120s
 
+# устранение проблем зависания и доступа к дискам в WSL2
    node-exporter:
      init: true
      deploy:
@@ -65,4 +85,4 @@ services:
        # Reduce polling frequency (default 1s is too aggressive for WSL2)
        - "--housekeeping_interval=30s"
        # Skip root cgroup stats (can take 3-8s to read in WSL2)
-       - "--disable_root_cgroup_stats=true"oup_stats=true"
+       - "--disable_root_cgroup_stats=true"
