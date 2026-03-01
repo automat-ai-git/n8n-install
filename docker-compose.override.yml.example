@@ -34,12 +34,12 @@ services:
 
    paddleocr:
      healthcheck:
-       test: ["CMD-SHELL", "curl -f -s http://localhost:8080 > /dev/null || exit 1"]
-       start_period: 300s
+       test: ["CMD-SHELL", "curl -s http://localhost:8080 > /dev/null || exit 1"]
+       start_period: 200s
 
    lightrag:
      healthcheck:
-       test: ["CMD-SHELL", "http_proxy= https_proxy= HTTP_PROXY= HTTPS_PROXY= curl -f -s http://localhost:9621/health > /dev/null || exit 1"]
+       test: ["CMD-SHELL", "python3 -c 'import socket; s = socket.socket(); s.connect((\"localhost\", 9621))' || exit 1"]
        start_period: 120s
 
    node-exporter:
