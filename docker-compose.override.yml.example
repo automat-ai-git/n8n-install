@@ -24,6 +24,24 @@
 # DO NOT enable on native Linux servers — it disables disk metrics.
 #
 services:
+   appsmith:
+     healthcheck:
+       test: ["CMD-SHELL", "http_proxy= https_proxy= HTTP_PROXY= HTTPS_PROXY= curl -f -s http://localhost/api/v1/health || exit 1"]
+
+   comfyui:
+     healthcheck:
+       test: ["CMD-SHELL", "curl -f -s http://localhost:8188 > /dev/null || exit 1"]
+
+   paddleocr:
+     healthcheck:
+       test: ["CMD-SHELL", "curl -f -s http://localhost:8080 > /dev/null || exit 1"]
+       start_period: 300s
+
+   lightrag:
+     healthcheck:
+       test: ["CMD-SHELL", "http_proxy= https_proxy= HTTP_PROXY= HTTPS_PROXY= curl -f -s http://localhost:9621/health > /dev/null || exit 1"]
+       start_period: 120s
+
    node-exporter:
      init: true
      deploy:
@@ -47,4 +65,4 @@ services:
        # Reduce polling frequency (default 1s is too aggressive for WSL2)
        - "--housekeeping_interval=30s"
        # Skip root cgroup stats (can take 3-8s to read in WSL2)
-       - "--disable_root_cgroup_stats=true"
+       - "--disable_root_cgroup_stats=true"oup_stats=true"
