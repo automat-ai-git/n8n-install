@@ -86,3 +86,8 @@ services:
        - "--housekeeping_interval=30s"
        # Skip root cgroup stats (can take 3-8s to read in WSL2)
        - "--disable_root_cgroup_stats=true"
+
+# Тест: фикс ARI ошибок Caddy - хардкодим IP Let's Encrypt
+   caddy:
+     extra_hosts:
+       - "acme-v02.api.letsencrypt.org:172.65.32.248"
