@@ -80,12 +80,18 @@ services:
 
    cadvisor:
      command:
-       - "--disable_metrics=disk,diskIO,resctrl,tcp,udp,percpu,sched,process"
+       - "--disable_metrics=disk,diskIO,tcp,udp,percpu,sched,process,hugetlb,referenced_memory,resctrl,advtcp,memory_numa"
        - "--docker_only=true"
        # Reduce polling frequency (default 1s is too aggressive for WSL2)
-       - "--housekeeping_interval=30s"
+       - "--housekeeping_interval=60s"
+       - "--global_housekeeping_interval=2m"
        # Skip root cgroup stats (can take 3-8s to read in WSL2)
        - "--disable_root_cgroup_stats=true"
+     deploy:
+       resources:
+         limits:
+           cpus: '0.15'  # Не даст ему прыгать выше 15% одного ядра
+           memory: 256M
 
 # Тест: фикс ARI ошибок Caddy - хардкодим IP Let's Encrypt
    caddy:
