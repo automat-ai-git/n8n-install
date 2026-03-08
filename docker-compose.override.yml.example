@@ -37,6 +37,13 @@ services:
                capabilities: [gpu]
      volumes:
        - ./storage-models/ollama:/root/.ollama # Твои 113 ГБ моделей
+     environment:
+       - OLLAMA_NUM_PARALLEL=4
+       - OLLAMA_MAX_LOADED_MODELS=4
+       - OLLAMA_FLASH_ATTENTION=1
+       - OLLAMA_KV_CACHE_TYPE=q8_0
+       # Увеличим лимит памяти, если нужно будет очень длинные тексты совать
+       - OLLAMA_CONTEXT_LENGTH=8192
 
   # 2. Исправляем сервис инициализации (про него нельзя забывать!)
    ollama-pull-llama-gpu:
