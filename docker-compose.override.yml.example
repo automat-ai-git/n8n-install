@@ -48,6 +48,28 @@ services:
        test: ["CMD-SHELL", "http_proxy= https_proxy= HTTP_PROXY= HTTPS_PROXY= curl -f -s http://localhost/api/v1/health || exit 1"]
 
    comfyui:
+     image: yanwk/comfyui-boot:cu128-slim
+     container_name: comfyui
+     # Убираем --cpu, оставляем только то, что просил автор
+     environment:
+       CLI_ARGS: "--disable-xformers --listen 0.0.0.0"
+     # Точное повторение всех ключей -v из инструкции
+     volumes:
+       - ./storage:/root
+       - ./storage-models/models:/root/ComfyUI/models
+       - ./storage-models/hf-hub:/root/.cache/huggingface/hub
+       - ./storage-models/torch-hub:/root/.cache/torch/hub
+       - ./storage-user/input:/root/ComfyUI/input
+       - ./storage-user/output:/root/ComfyUI/output
+       - ./storage-user/workflows:/root/ComfyUI/user/default/workflows
+     # Активация GPU (аналог --gpus all)
+     deploy:
+       resources:
+         reservations:
+           devices:
+             - driver: nvidia
+               count: all
+               capabilities: [gpu]
      healthcheck:
        test: ["CMD-SHELL", "curl -f -s http://localhost:8188 > /dev/null || exit 1"]
 
