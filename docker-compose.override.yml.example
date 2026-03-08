@@ -27,6 +27,30 @@
 
 services:
 
+   ollama-gpu:
+     deploy:
+       resources:
+         reservations:
+           devices:
+             - driver: nvidia
+               device_ids: ['0'] # Твоя 5090
+               capabilities: [gpu]
+     volumes:
+       - ./storage-models/ollama:/root/.ollama # Твои 113 ГБ моделей
+
+  # 2. Исправляем сервис инициализации (про него нельзя забывать!)
+   ollama-pull-llama-gpu:
+     volumes:
+       - ./storage-models/ollama:/root/.ollama # Тот же путь, чтобы он видел твои модели
+     # Назначаем ту же карту, чтобы не занимать 5070 Ti даже на секунду
+     deploy:
+       resources:
+         reservations:
+           devices:
+             - driver: nvidia
+               device_ids: ['0']
+               capabilities: [gpu]
+
 #запрет регистрации пользователей
    ragflow:
      environment:
@@ -68,7 +92,7 @@ services:
          reservations:
            devices:
              - driver: nvidia
-               count: all
+               device_ids: ['1']
                capabilities: [gpu]
      healthcheck:
        test: ["CMD-SHELL", "curl -f -s http://localhost:8188 > /dev/null || exit 1"]
