@@ -44,6 +44,9 @@ services:
        - OLLAMA_KV_CACHE_TYPE=q8_0
        # Увеличим лимит памяти, если нужно будет очень длинные тексты совать
        - OLLAMA_CONTEXT_LENGTH=8192
+        # Видеть только видеокарту с номером 0:
+       - CUDA_VISIBLE_DEVICES=0
+       - NVIDIA_VISIBLE_DEVICES=0
 
   # 2. Исправляем сервис инициализации (про него нельзя забывать!)
    ollama-pull-llama-gpu:
@@ -83,7 +86,10 @@ services:
      container_name: comfyui
      # Убираем --cpu, оставляем только то, что просил автор
      environment:
-       CLI_ARGS: "--disable-xformers --listen 0.0.0.0"
+       - CLI_ARGS=--disable-xformers --listen 0.0.0.0
+       # Видеть только видеокарту с номером 1
+       - CUDA_VISIBLE_DEVICES=1
+       - NVIDIA_VISIBLE_DEVICES=1
      # Точное повторение всех ключей -v из инструкции
      volumes:
        - ./storage:/root
