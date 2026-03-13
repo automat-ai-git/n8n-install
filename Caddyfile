@@ -109,7 +109,8 @@ import /etc/caddy/addons/tls-snippet.conf
 
 # Uptime Kuma
 {$UPTIME_KUMA_HOSTNAME} {
-    reverse_proxy uptimekuma:3001
+    import service_tls
+    reverse_proxy uptime-kuma:3001
 }
 
 # Databasus

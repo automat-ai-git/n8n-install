@@ -36,6 +36,7 @@ volumes:
   ragflow_redis_data:
   temporal_elasticsearch_data:
   valkey-data:
+  uptime_kuma_data:
   weaviate_data:
 
 # Shared logging configuration for services
@@ -380,6 +381,7 @@ services:
       SEARXNG_PASSWORD_HASH: ${SEARXNG_PASSWORD_HASH}
       SEARXNG_USERNAME: ${SEARXNG_USERNAME}
       SUPABASE_HOSTNAME: ${SUPABASE_HOSTNAME}
+      UPTIME_KUMA_HOSTNAME: ${UPTIME_KUMA_HOSTNAME}
       WAHA_HOSTNAME: ${WAHA_HOSTNAME}
       WEAVIATE_HOSTNAME: ${WEAVIATE_HOSTNAME}
       WEBUI_HOSTNAME: ${WEBUI_HOSTNAME}
@@ -1282,12 +1284,13 @@ services:
     container_name: uptime-kuma
     profiles: ["uptime-kuma"]
     restart: unless-stopped
+    logging: *default-logging
     environment:
       UPTIME_KUMA_WS_ORIGIN_CHECK: bypass
     volumes:
-      - uptime_kuma_data:/app/database
+      - uptime_kuma_data:/app/data
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/ || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5

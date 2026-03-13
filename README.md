@@ -112,7 +112,7 @@ The installer also makes the following powerful open-source tools **available fo
 
 ✅ [**Supabase**](https://supabase.com/) - An open-source alternative to Firebase, providing database storage, user authentication, and more. It's a popular choice for AI applications.
 
-✅ [**Uptime Kuma**](https://github.com/louislam/uptime-kuma - Self-hosted uptime monitoring tool with notifications
+✅ [**Uptime Kuma**](https://github.com/louislam/uptime-kuma) - Self-hosted uptime monitoring tool with notifications
 
 ✅ [**WAHA**](https://waha.devlike.pro/) - WhatsApp HTTP API (REST API) that you can configure in a click! 3 engines: WEBJS (browser based), NOWEB (websocket nodejs), GOWS (websocket go).
 
