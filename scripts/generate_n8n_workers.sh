@@ -64,6 +64,7 @@ cat >> "$OUTPUT_FILE" << EOF
     depends_on:
       n8n-worker-$i:
         condition: service_healthy
+        restart: true
 
 EOF
 done
