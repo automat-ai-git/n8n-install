@@ -1286,11 +1286,12 @@ services:
     restart: unless-stopped
     logging: *default-logging
     environment:
+      <<: *proxy-env
       UPTIME_KUMA_WS_ORIGIN_CHECK: bypass
     volumes:
       - uptime_kuma_data:/app/data
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/ || exit 1"]
+      test: ["CMD-SHELL", "http_proxy= https_proxy= HTTP_PROXY= HTTPS_PROXY= wget -qO- http://localhost:3001/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
