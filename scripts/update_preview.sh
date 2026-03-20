@@ -72,7 +72,7 @@ echo ""
 
 # Core services (always checked)
 log_subheader "Core Services"
-check_image_update "postgres" "postgres:${POSTGRES_VERSION:-17}-alpine"
+check_image_update "postgres" "pgvector/pgvector:pg${POSTGRES_VERSION:-17}"
 check_image_update "redis" "valkey/valkey:8-alpine"
 check_image_update "caddy" "caddy:2-alpine"
 
@@ -137,6 +137,11 @@ fi
 if is_profile_active "appsmith"; then
     log_subheader "Appsmith"
     check_image_update "appsmith" "appsmith/appsmith-ce:release"
+fi
+
+if is_profile_active "uptime-kuma"; then
+    log_subheader "Uptime Kuma"
+    check_image_update "uptime-kuma" "louislam/uptime-kuma:2"
 fi
 
 # Summary

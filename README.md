@@ -112,6 +112,8 @@ The installer also makes the following powerful open-source tools **available fo
 
 ✅ [**Supabase**](https://supabase.com/) - An open-source alternative to Firebase, providing database storage, user authentication, and more. It's a popular choice for AI applications.
 
+✅ [**Uptime Kuma**](https://github.com/louislam/uptime-kuma) - Self-hosted uptime monitoring tool with notifications
+
 ✅ [**WAHA**](https://waha.devlike.pro/) - WhatsApp HTTP API (REST API) that you can configure in a click! 3 engines: WEBJS (browser based), NOWEB (websocket nodejs), GOWS (websocket go).
 
 ✅ [**Weaviate**](https://weaviate.io/) - An open-source AI-native vector database with a focus on scalability and ease of use. It can be used for RAG, hybrid search, and more.
@@ -204,6 +206,7 @@ After successful installation, your services are up and running! Here's how to g
     - **RAGFlow:** `ragflow.yourdomain.com`
     - **SearXNG:** `searxng.yourdomain.com`
     - **Supabase (Dashboard):** `supabase.yourdomain.com`
+    - **Uptime Kuma:** `uptime-kuma.yourdomain.com` (Uptime monitoring dashboard)
     - **WAHA:** `waha.yourdomain.com` (WhatsApp HTTP API; engines: WEBJS, NOWEB, GOWS)
     - **Weaviate:** `weaviate.yourdomain.com`
 
