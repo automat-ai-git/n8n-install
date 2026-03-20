@@ -66,6 +66,8 @@ services:
    ragflow:
      environment:
        REGISTER_ENABLED: "0"
+     volumes:
+       - ./ragflow/nginx.conf:/etc/nginx/conf.d/ragflow.conf:ro
 
 #чуть подольше поднмаем базу для того, чтобы не спешили остальные контейнеры, кто проверяет хэлзичек - postiz например
    postgres:
