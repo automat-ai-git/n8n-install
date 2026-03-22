@@ -61,6 +61,8 @@ cat >> "$OUTPUT_FILE" << EOF
     profiles: ["n8n"]
     restart: unless-stopped
     network_mode: "service:n8n-worker-$i"
+    environment:
+      N8N_RUNNERS_AUTO_SHUTDOWN_TIMEOUT: "0"
     depends_on:
       n8n-worker-$i:
         condition: service_healthy
