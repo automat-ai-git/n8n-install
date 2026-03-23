@@ -71,18 +71,40 @@ def clone_supabase_repo():
         os.chdir("..")
 
 def prepare_supabase_env():
-    """Copy .env to .env in supabase/docker."""
+    """Copy .env to supabase/docker/.env, or sync new variables if it already exists."""
     if not is_supabase_enabled():
         print("Supabase is not enabled, skipping env preparation.")
         return
     env_path = os.path.join("supabase", "docker", ".env")
-    env_example_path = os.path.join(".env")
-    # Do not overwrite existing Supabase env to avoid credential drift
+    root_env_path = ".env"
     if os.path.exists(env_path):
-        print(f"Supabase env already exists at {env_path}, not overwriting.")
+        # Sync new variables from root .env that don't exist in supabase .env
+        print(f"Syncing new variables from root .env to {env_path}...")
+        root_env = dotenv_values(root_env_path)
+        supabase_env = dotenv_values(env_path)
+        new_vars = []
+        for key, value in root_env.items():
+            if key not in supabase_env and value is not None:
+                # Quote values to handle special characters safely
+                if '$' in value:
+                    new_vars.append(f"{key}='{value}'")
+                else:
+                    new_vars.append(f'{key}="{value}"')
+        if new_vars:
+            with open(env_path, 'r') as f:
+                existing_content = f.read()
+            sync_header = "# --- Variables synced from root .env ---"
+            with open(env_path, 'a') as f:
+                if sync_header not in existing_content:
+                    f.write(f"\n{sync_header}\n")
+                for var in new_vars:
+                    f.write(f"{var}\n")
+            print(f"Synced {len(new_vars)} new variable(s) to Supabase env.")
+        else:
+            print("Supabase env is up to date, no new variables to sync.")
         return
     print("Copying .env in root to .env in supabase/docker...")
-    shutil.copyfile(env_example_path, env_path)
+    shutil.copyfile(root_env_path, env_path)
 
 def clone_dify_repo():
     """Clone the Dify repository using sparse checkout if not already present."""
