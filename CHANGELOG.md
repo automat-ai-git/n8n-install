@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-03-23
+
+### Fixed
+- **Supabase Storage** - Fix crash-loop (`Region is missing`) by adding missing S3 storage configuration variables (`REGION`, `GLOBAL_S3_BUCKET`, `STORAGE_TENANT_ID`) from upstream Supabase
+- **Supabase** - Sync new environment variables to existing `supabase/docker/.env` during updates (previously only populated on first install)
+
 ## [1.4.0] - 2026-03-15
 
 ### Added
