@@ -1291,7 +1291,7 @@ services:
     volumes:
       - uptime_kuma_data:/app/data
     healthcheck:
-      test: ["CMD-SHELL", "http_proxy= https_proxy= HTTP_PROXY= HTTPS_PROXY= wget -qO- http://localhost:3001/ || exit 1"]
+      test: ["CMD-SHELL", "node -e \"const http=require('http');const r=http.get('http://localhost:3001',res=>{process.exit(res.statusCode<400?0:1)});r.on('error',()=>process.exit(1));r.setTimeout(5000,()=>{r.destroy();process.exit(1)})\""]
       interval: 30s
       timeout: 10s
       retries: 5
