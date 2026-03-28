@@ -255,11 +255,11 @@ services:
     profiles: ["n8n-template"]
     entrypoint: ["/bin/sh", "-c", "/usr/local/bin/task-runner-launcher javascript python"]
     healthcheck:
-      test: ["CMD-SHELL", "http_proxy= https_proxy= HTTP_PROXY= HTTPS_PROXY= wget -qO- http://localhost:5680/healthz || exit 1"]
+      test: ["CMD-SHELL", "http_proxy= https_proxy= HTTP_PROXY= HTTPS_PROXY= wget -qO- http://localhost:5680/healthz || exit 1 && wget -qO- http://localhost:5681/healthz || kill 1 && wget -qO- http://localhost:5682/healthz || kill 1"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 30s
+      start_period: 60s
 
   qdrant:
     image: qdrant/qdrant
