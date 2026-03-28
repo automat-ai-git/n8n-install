@@ -45,8 +45,8 @@ services:
      volumes:
        - ./storage-models/ollama:/root/.ollama # Твои 113 ГБ моделей
      environment:
-       - OLLAMA_NUM_PARALLEL=4
-       - OLLAMA_MAX_LOADED_MODELS=4
+       - OLLAMA_NUM_PARALLEL=1
+       - OLLAMA_MAX_LOADED_MODELS=1
        - OLLAMA_FLASH_ATTENTION=1
        - OLLAMA_KV_CACHE_TYPE=q8_0
        # Увеличим лимит памяти, если нужно будет очень длинные тексты совать
