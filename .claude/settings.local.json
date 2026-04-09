@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /d/GitHUB/automat-ai/n8n-install -path */supabase* -name *.yml -o -path */supabase* -name *.sh)"
+    ]
+  }
+}

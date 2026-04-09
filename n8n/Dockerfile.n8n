@@ -2,7 +2,7 @@
 FROM mwader/static-ffmpeg:latest AS ffmpeg
 
 # Stage 2: Build final n8n image with ffmpeg
-FROM n8nio/n8n:2.12.2 
+FROM n8nio/n8n:stable
 
 USER root
 # Copy static ffmpeg binaries from the ffmpeg stage

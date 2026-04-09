@@ -5,26 +5,48 @@ use_layout_parser: True
 use_mllm_predict: True
 
 SubModules:
+
+SubModules:
+#  LLM_Chat:
+#    module_name: chat_bot
+#    model_name: ernie-3.5-8k
+#    base_url: "https://qianfan.baidubce.com/v2"
+#    api_type: openai
+#    api_key: "api_key" # Set this to a real API key
+
+#  LLM_Retriever:
+#    module_name: retriever
+#    model_name: embedding-v1
+#    base_url: "https://qianfan.baidubce.com/v2"
+#    api_type: qianfan
+#    api_key: "api_key" # Set this to a real API key
+
+#  MLLM_Chat:
+#    module_name: chat_bot
+#    model_name: PP-DocBee
+#    base_url: "http://127.0.0.1:8080/v1/chat/completions"
+#    api_type: openai
+#    api_key: "api_key"
+
   LLM_Chat:
-    module_name: chat_bot
-    model_name: ernie-3.5-8k
-    base_url: "https://qianfan.baidubce.com/v2"
+    model_name: qwen2.5:14b        # НЕ qwen3 — он пишет <think> теги
+    base_url: "http://ollama:11434/v1/chat/completions"
     api_type: openai
-    api_key: "api_key" # Set this to a real API key
+    api_key: "ollama"
 
   LLM_Retriever:
-    module_name: retriever
-    model_name: embedding-v1
-    base_url: "https://qianfan.baidubce.com/v2"
-    api_type: qianfan
-    api_key: "api_key" # Set this to a real API key
+    model_name: bge-m3:latest
+    base_url: "http://ollama:11434/v1"
+    api_type: openai                # было qianfan — не работает с Ollama
+    api_key: "ollama"
+
 
   MLLM_Chat:
     module_name: chat_bot
-    model_name: PP-DocBee
-    base_url: "http://127.0.0.1:8080/v1/chat/completions"
+    model_name: qwen3-vl:32b
+    base_url: "http://ollama:11434/v1/chat/completions"
     api_type: openai
-    api_key: "api_key"
+    api_key: "ollama"
 
   PromptEngneering:
     KIE_CommonText:
