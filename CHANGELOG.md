@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [1.4.2] - 2026-03-28
+
+### Fixed
+- **n8n** - Make `N8N_PAYLOAD_SIZE_MAX` configurable via `.env` (was hardcoded to 256, ignoring user overrides)
+- **Uptime Kuma** - Fix healthcheck failure (`wget: not found`) by switching to Node.js-based check
+
 ## [1.4.1] - 2026-03-23
 
 ### Fixed

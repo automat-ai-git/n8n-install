@@ -83,7 +83,7 @@ x-n8n: &service-n8n
     N8N_LOG_LEVEL: ${N8N_LOG_LEVEL:-info}
     N8N_LOG_OUTPUT: ${N8N_LOG_OUTPUT:-console}
     N8N_METRICS: true
-    N8N_PAYLOAD_SIZE_MAX: 256
+    N8N_PAYLOAD_SIZE_MAX: ${N8N_PAYLOAD_SIZE_MAX:-256}
     N8N_PERSONALIZATION_ENABLED: false
     N8N_RESTRICT_FILE_ACCESS_TO: /data/shared
     N8N_RUNNERS_AUTH_TOKEN: ${N8N_RUNNERS_AUTH_TOKEN}
@@ -1292,7 +1292,7 @@ services:
     volumes:
       - uptime_kuma_data:/app/data
     healthcheck:
-      test: ["CMD-SHELL", "http_proxy= https_proxy= HTTP_PROXY= HTTPS_PROXY= wget -qO- http://localhost:3001/ || exit 1"]
+      test: ["CMD-SHELL", "node -e \"const http=require('http');const r=http.get('http://localhost:3001',res=>{process.exit(res.statusCode<400?0:1)});r.on('error',()=>process.exit(1));r.setTimeout(5000,()=>{r.destroy();process.exit(1)})\""]
       interval: 30s
       timeout: 10s
       retries: 5
