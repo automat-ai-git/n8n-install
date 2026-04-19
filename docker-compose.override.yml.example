@@ -50,7 +50,7 @@ services:
        - OLLAMA_FLASH_ATTENTION=1
        - OLLAMA_KV_CACHE_TYPE=q8_0
        # Увеличим лимит памяти, если нужно будет очень длинные тексты совать
-       - OLLAMA_CONTEXT_LENGTH=32768
+       - OLLAMA_CONTEXT_LENGTH=16384
 	   - OLLAMA_KEEP_ALIVE=5h
         # Видеть только видеокарту с номером 0:
        - CUDA_VISIBLE_DEVICES=0
