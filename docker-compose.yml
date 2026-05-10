@@ -1185,6 +1185,7 @@ services:
       # Authentication (Built-in)
       AUTH_ACCOUNTS: ${LIGHTRAG_USERNAME}:${LIGHTRAG_PASSWORD}
       LIGHTRAG_API_KEY: ${LIGHTRAG_API_KEY}
+      TOKEN_SECRET: ${LIGHTRAG_TOKEN_SECRET}
       # LLM Configuration (Ollama)
       LLM_BINDING: ollama
       LLM_MODEL: qwen2.5:32b

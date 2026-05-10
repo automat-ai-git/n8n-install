@@ -93,6 +93,7 @@ declare -A VARS_TO_GENERATE=(
     ["LETTA_SERVER_PASSWORD"]="password:32" # Added Letta server password
     ["LIGHTRAG_API_KEY"]="secret:48"
     ["LIGHTRAG_PASSWORD"]="password:32"
+    ["LIGHTRAG_TOKEN_SECRET"]="secret:64" # JWT signing secret (required when AUTH_ACCOUNTS is set)
     ["LOGFLARE_PRIVATE_ACCESS_TOKEN"]="fixed:not-in-use" # For supabase-vector, can't be empty
     ["LOGFLARE_PUBLIC_ACCESS_TOKEN"]="fixed:not-in-use" # For supabase-vector, can't be empty
     ["LT_PASSWORD"]="password:32" # Added LibreTranslate basic auth password

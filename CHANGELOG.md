@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [1.4.3] - 2026-04-27
+
+### Fixed
+- **LightRAG** - Fix crash-loop (`TOKEN_SECRET must be explicitly set`) by generating `LIGHTRAG_TOKEN_SECRET` and passing it as `TOKEN_SECRET` to the container. Recent upstream releases require an explicit JWT signing secret whenever `AUTH_ACCOUNTS` is configured (#60).
+
 ## [1.4.2] - 2026-03-28
 
 ### Fixed
