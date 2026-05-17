@@ -278,9 +278,13 @@ def stop_existing_containers():
         cmd.extend(["-f", supabase_compose_path])
     
     # Check if the Dify Docker Compose file exists. If so, include it in the 'down' command.
+    # Dify wraps its bundled infrastructure (db_postgres, weaviate, etc.) in compose profiles,
+    # so we must pass all of them to 'down' to actually stop those containers.
     dify_compose_path = os.path.join("dify", "docker", "docker-compose.yaml")
     if os.path.exists(dify_compose_path):
         cmd.extend(["-f", dify_compose_path])
+        for profile in get_all_profiles(dify_compose_path):
+            cmd.extend(["--profile", profile])
 
     # Check if the n8n workers compose file exists. If so, include it in the 'down' command.
     n8n_workers_compose_path = "docker-compose.n8n-workers.yml"
@@ -306,13 +310,23 @@ def start_supabase():
     ])
 
 def start_dify():
-    """Start the Dify services (using its compose file)."""
+    """Start the Dify services (using its compose file).
+
+    Dify wraps db_postgres, weaviate, qdrant, etc. in compose profiles. Without
+    activating them, only api/web/worker/redis come up and api crash-loops with
+    'could not translate host name "db_postgres"'. We activate the minimum set
+    (postgresql + weaviate) that matches the upstream .env.example defaults.
+    """
     if not is_dify_enabled():
         print("Dify is not enabled, skipping start.")
         return
     print("Starting Dify services...")
     run_command([
-        "docker", "compose", "-p", "localai", "-f", "dify/docker/docker-compose.yaml", "up", "-d"
+        "docker", "compose", "-p", "localai",
+        "--profile", "postgresql",
+        "--profile", "weaviate",
+        "-f", "dify/docker/docker-compose.yaml",
+        "up", "-d",
     ])
 
 def start_local_ai():
