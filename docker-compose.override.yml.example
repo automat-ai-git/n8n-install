@@ -164,6 +164,8 @@ services:
        - "--no-collector.wifi"
 
    cadvisor:
+     cpus: "0.15"   # Не даст ему прыгать выше 15% одного ядра
+     mem_limit: 256m
      command:
        - "--disable_metrics=disk,diskIO,tcp,udp,percpu,sched,process,hugetlb,referenced_memory,resctrl,advtcp,memory_numa"
        - "--docker_only=true"
@@ -172,11 +174,6 @@ services:
        - "--global_housekeeping_interval=2m"
        # Skip root cgroup stats (can take 3-8s to read in WSL2)
        - "--disable_root_cgroup_stats=true"
-     deploy:
-       resources:
-         limits:
-           cpus: '0.15'  # Не даст ему прыгать выше 15% одного ядра
-           memory: 256M
 
 # Тест: фикс ARI ошибок Caddy - хардкодим IP Let's Encrypt
 #   caddy:
