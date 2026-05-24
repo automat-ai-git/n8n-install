@@ -185,34 +185,9 @@ This project uses [Semantic Versioning](https://semver.org/). When updating `CHA
 Complex services like Supabase and Dify maintain their own upstream docker-compose files:
 - `start_services.py` handles cloning repos, preparing `.env` files, and starting services
 - Each external service needs: `is_*_enabled()`, `clone_*_repo()`, `prepare_*_env()`, `start_*()` functions in `start_services.py`
-- Both Supabase and Dify use **sparse checkout** to clone only the relevant subdirectory from upstream repos
 - `scripts/utils.sh` provides `get_*_compose()` getter functions and `build_compose_files_array()` includes them
 - `stop_all_services()` in `start_services.py` checks compose file existence (not profile) to ensure cleanup when a profile is removed
 - All external compose files use the same project name (`-p localai`) so containers appear together
-- `start_services.py` runs `docker build --pull` before starting services that have custom Dockerfiles
-
-### SearXNG Initialization
-
-SearXNG requires special initialization not handled by docker-compose alone:
-- `start_services.py` generates a random `SEARXNG_SECRET_KEY` and writes `searxng/settings.yml` from a template
-- On first start, `check_and_fix_docker_compose_for_searxng()` temporarily adds `cap_drop: []` to allow SearXNG to initialize, then removes it afterward
-- If `searxng/settings.yml` already exists, initialization is skipped
-
-### Postiz and temporal-ui
-
-Postiz includes `temporal-ui` as a companion service:
-- `temporal-ui` is a workflow orchestration admin UI used internally by Postiz
-- Both services share the `postiz` Docker Compose profile
-- `temporal-ui` is accessible via `TEMPORAL_UI_HOSTNAME` but is for admin use only
-
-### neo4j
-
-neo4j is a full-featured graph database service:
-- Has its own entry in `scripts/databases.sh` (`INIT_DB_DATABASES`) for PostgreSQL isolation
-- Accessible via `NEO4J_HOSTNAME`
-- Used by LightRAG and other graph-aware RAG services
-
-
 - **`docker-compose.override.yml`**: User customizations file (gitignored). Both `start_services.py` and `build_compose_files_array()` in `utils.sh` auto-detect and include it last (highest precedence). Users can override any service property without modifying tracked files.
 
 ### Secret Generation
@@ -236,82 +211,31 @@ Key functions:
 - `gen_password 32` / `gen_hex 64` / `gen_base64 64` - Secret generation
 - `generate_bcrypt_hash "password"` - Create Caddy-compatible bcrypt hash (uses Caddy binary)
 - `json_escape "string"` - Escape string for JSON output
-- `require_command "cmd"` / `require_file "path"` / `ensure_file_exists "path"` - Prerequisite checks
-- `validate_positive_integer "val"` - Validate integer input
-- `start_spinner "msg"` / `stop_spinner` - Progress spinner for long operations
-- `show_step N total "label"` / `show_progress "msg"` / `complete_progress` - Step progress tracking
-- `save_debian_frontend` / `restore_debian_frontend` - Preserve DEBIAN_FRONTEND across apt installs
-- `cleanup_bak_files "dir"` - Remove leftover `.bak` files
-- `cleanup_legacy_n8n_workers` - Remove old n8n worker containers from previous naming convention
-- `cleanup_legacy_postgresus` - Remove legacy postgresus container (renamed to databasus)
 - `wt_input`, `wt_password`, `wt_yesno`, `wt_msg` - Whiptail dialog wrappers
 - `wt_checklist`, `wt_radiolist`, `wt_menu` - Whiptail selection dialogs
 - `wt_parse_choices "$result" array_name` - Parse quoted checklist output safely
-- `wt_get_size` - Compute dialog dimensions for whiptail
 - `log_info`, `log_success`, `log_warning`, `log_error` - Logging functions
 - `log_header`, `log_subheader`, `log_divider`, `log_box` - Formatted output
 - `print_ok`, `print_error`, `print_warning`, `print_info` - Doctor output helpers
 - `get_real_user` / `get_real_user_home` - Get actual user even under sudo
 - `backup_preserved_dirs` / `restore_preserved_dirs` - Directory preservation for git updates
+- `cleanup_legacy_n8n_workers` - Remove old n8n worker containers from previous naming convention
 - `get_n8n_workers_compose` / `get_supabase_compose` / `get_dify_compose` - Get compose file path if profile active AND file exists
 - `build_compose_files_array` - Build global `COMPOSE_FILES` array with all active compose files (main + external)
 
 ### Service Profiles
 
-**Core (always running, no profile):** `postgres`, `redis` (Valkey), `caddy`, `welcome`
-
-**Automation / AI Agents:**
-- `n8n`: n8n workflow automation (main app, worker, runner, import services)
+Common profiles:
+- `n8n`: n8n workflow automation (includes main app, worker, runner, and import services)
 - `flowise`: Flowise AI agent builder
-- `open-webui`: Open WebUI chat interface for Ollama
-- `letta`: Letta (MemGPT) stateful AI agent framework
-- `dify`: Dify LLM app platform (uses external compose via `start_services.py`)
-
-**Hardware / Inference:**
-- `cpu`: Ollama CPU-only inference
-- `gpu-nvidia`: Ollama with NVIDIA GPU support (mutually exclusive with cpu/gpu-amd)
-- `gpu-amd`: Ollama with AMD GPU support (mutually exclusive with cpu/gpu-nvidia)
-- `comfyui`: ComfyUI image/video generation (GPU-accelerated)
-- `libretranslate`: Local machine translation service
-
-**Vector Databases & Knowledge Graphs:**
-- `qdrant`: Qdrant vector database
-- `weaviate`: Weaviate vector database
-- `neo4j`: Neo4j graph database (has its own PostgreSQL database)
-- `lightrag`: LightRAG knowledge graph retrieval
-
-**RAG / Document Processing:**
-- `ragapp`: RAGapp document Q&A
-- `ragflow`: RAGFlow document pipeline
-- `docling`: Docling document parsing/conversion
-- `paddleocr`: PaddleOCR optical character recognition
-- `gotenberg`: Gotenberg document conversion (internal, no external access)
-- `crawl4ai`: Crawl4AI web scraping (internal, no external access)
-
-**Databases / Storage:**
-- `databasus`: Databasus database management UI
-- `nocodb`: NocoDB no-code database UI
-
-**Monitoring & Observability:**
 - `monitoring`: Prometheus, Grafana, cAdvisor, node-exporter
-- `langfuse`: Langfuse LLM observability (ClickHouse, MinIO, worker, web)
-
-**Social / Communication:**
-- `postiz`: Postiz social media scheduler (includes temporal-ui for admin)
-- `waha`: WAHA WhatsApp HTTP API
-
-**Search:**
-- `searxng`: SearXNG private search engine (requires `settings.yml` generation; see SearXNG note below)
-
-**Infrastructure:**
-- `portainer`: Portainer Docker management UI
+- `langfuse`: Langfuse observability (includes ClickHouse, MinIO, worker, web)
+- `cpu`, `gpu-nvidia`, `gpu-amd`: Ollama hardware profiles (mutually exclusive)
 - `cloudflare-tunnel`: Cloudflare Tunnel for zero-trust access (see `cloudflare-instructions.md`)
 - `supabase`: Supabase BaaS (external compose, cloned at runtime; mutually exclusive with `dify`)
 - `dify`: Dify AI platform (external compose, cloned at runtime; mutually exclusive with `supabase`)
 - `gost`: HTTP/HTTPS proxy for routing AI service outbound traffic
 - `python-runner`: Internal Python execution environment (no external access)
-
-- `supabase`: Supabase backend-as-a-service (uses external compose via `start_services.py`)
 - `searxng`, `letta`, `lightrag`, `libretranslate`, `crawl4ai`, `docling`, `waha`, `comfyui`, `paddleocr`, `ragapp`, `gotenberg`, `postiz`: Additional optional services
 
 ## Architecture Patterns
@@ -422,30 +346,6 @@ These are backed up before `git reset --hard` and restored after.
 ### Password hash generation fails
 - Ensure Caddy container is running: `docker compose -p localai up -d caddy`
 - Script uses: `docker exec caddy caddy hash-password --plaintext "$password"`
-
-### Monitoring (node-exporter + cAdvisor) kills the system on WSL2
-
-**Symptom**: After starting the `monitoring` profile, Load Average spikes above 900, SSH session drops, system becomes unresponsive.
-
-**Root cause — two processes, same bug**:
-
-1. **node-exporter** (Go): tries to `stat()` every mounted filesystem to collect disk metrics. In WSL2 this includes Windows drives (`/mnt/c`, `/mnt/d`, ...) via `9p`/`drvfs` protocol. These calls hang indefinitely. Because node-exporter collects on a fixed interval, each timed-out goroutine is not cancelled before the next scrape spawns new ones — resulting in hundreds of concurrent blocked goroutines.
-
-2. **cAdvisor** (Go): same problem — it traverses `/rootfs` (mapped to host `/`) to collect `disk`, `diskIO`, and `resctrl` metrics, hitting the same `/mnt/*` Windows paths with the same goroutine explosion.
-
-**Fix — uncomment the WSL2 block in `docker-compose.override.yml`**:
-
-The repo ships `docker-compose.override.yml` (listed in `.gitignore`) with the fix pre-written but commented out. Docker Compose automatically loads this file alongside `docker-compose.yml` — no script changes needed.
-
-To enable on WSL2, open `docker-compose.override.yml` and uncomment the `services:` block inside the WSL2 section. The file contains full instructions.
-
-The uncommented block:
-- `node-exporter`: adds `--collector.filesystem.mount-points-exclude` covering `/mnt` and `/usr/lib/wsl`; adds `--collector.filesystem.fs-types-exclude` covering `9p` and `drvfs` types.
-- `cAdvisor`: adds `--disable_metrics=disk,diskIO,resctrl,tcp,udp,percpu,sched,process` and `--docker_only=true` to prevent rootfs traversal.
-
-Since `docker-compose.override.yml` is gitignored, your local changes survive `git pull` / `make update` automatically.
-
-**DO NOT move these flags into `docker-compose.yml`** — they will break disk metrics on production Linux servers.
 
 ## File Locations
 

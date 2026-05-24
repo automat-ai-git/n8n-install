@@ -72,6 +72,10 @@ services:
    ollama-pull-llama-gpu:
      volumes:
        - ./storage-models/ollama:/root/.ollama # Тот же путь, чтобы он видел твои модели
+# ДОБАВЛЯЕМ СТРОГИЙ ФИЛЬТР КАРТЫ ДЛЯ ПУЛЛЕРА:
+     environment:
+       - CUDA_VISIBLE_DEVICES=0
+       - NVIDIA_VISIBLE_DEVICES=0
      # Назначаем ту же карту, чтобы не занимать 5070 Ti даже на секунду
      deploy:
        resources:
@@ -175,6 +179,6 @@ services:
            memory: 256M
 
 # Тест: фикс ARI ошибок Caddy - хардкодим IP Let's Encrypt
-   caddy:
-     extra_hosts:
-       - "acme-v02.api.letsencrypt.org:172.65.32.248"
+#   caddy:
+#     extra_hosts:
+#       - "acme-v02.api.letsencrypt.org:172.65.32.248"
