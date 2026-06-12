@@ -180,6 +180,13 @@ services:
        # Добавляем только файл-глушилку, остальные диски подтянутся из основного файла
        - ./disable_syslogs.xml:/etc/clickhouse-server/config.d/disable_syslogs.xml:ro
 
+   prometheus:
+     command:
+       - '--config.file=/etc/prometheus/prometheus.yml'
+       - '--storage.tsdb.path=/prometheus'
+       - '--storage.tsdb.retention.time=15d'
+       - '--storage.tsdb.retention.size=2GB'
+
 # Тест: фикс ARI ошибок Caddy - хардкодим IP Let's Encrypt
 #   caddy:
 #     extra_hosts:
