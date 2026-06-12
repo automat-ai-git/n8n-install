@@ -23,3 +23,4 @@ certs/*
 # Custom Caddy addons (user configurations)
 caddy-addon/*.conf
 !caddy-addon/*.example
+.claude/
