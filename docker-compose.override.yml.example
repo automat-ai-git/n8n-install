@@ -108,7 +108,7 @@ services:
        test: ["CMD-SHELL", "http_proxy= https_proxy= HTTP_PROXY= HTTPS_PROXY= curl -f -s http://localhost/api/v1/health || exit 1"]
 
    comfyui:
-     image: yanwk/comfyui-boot:cu128-slim
+     image: yanwk/comfyui-boot:cu130-slim-v2
      container_name: comfyui
      # Убираем --cpu, оставляем только то, что просил автор
      environment:
