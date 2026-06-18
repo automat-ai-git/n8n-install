@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-06-17
+
+### Fixed
+- **Supabase** - Fix `make update` breaking existing databases by silently upgrading Postgres across major versions (e.g. `15.8.1.085` → `17.6.1.136`), which left `supabase-db` `unhealthy` and aborted the update. The installer now detects the major version of the data already on disk and pins `supabase/postgres` to a compatible tag after pulling upstream changes. Fresh installs continue to follow upstream (PG17); existing PG15 volumes stay on PG15 until you migrate manually (#64).
+
 ## [1.5.0] - 2026-05-17
 
 ### Fixed
