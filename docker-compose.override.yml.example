@@ -47,43 +47,39 @@ services:
          reservations:
            devices:
              - driver: nvidia
-               device_ids: ['0'] # Твоя 5090
+               device_ids: ['1'] # Вторая карта на хосте (5070 Ti)
                capabilities: [gpu]
      ports:
-       - "11434:11434" # Проброс порта: [Хост]:[Контейнер]
+       - "11434:11434"
      volumes:
-       - ./storage-models/ollama:/root/.ollama # Твои 113 ГБ моделей
-       - /mnt/d/models:/external-models:ro # Внешние GGUF/HF модели (только чтение)
+       - ./storage-models/ollama:/root/.ollama
+       - /mnt/d/models:/external-models:ro
      environment:
        - OLLAMA_HOST=0.0.0.0
        - OLLAMA_NUM_PARALLEL=1
        - OLLAMA_MAX_LOADED_MODELS=1
        - OLLAMA_FLASH_ATTENTION=1
        - OLLAMA_KV_CACHE_TYPE=q8_0
-       # Увеличим лимит памяти, если нужно будет очень длинные тексты совать 128k
        - OLLAMA_CONTEXT_LENGTH=131072
        - OLLAMA_KEEP_ALIVE=5h
-       # СОВЕТ: Добавь это, чтобы Ollama не жадничала с памятью 5090
        - OLLAMA_SCHED_SPREAD=1
-        # Видеть только видеокарту с номером 0:
+       # Внутри контейнера видна только одна карта — она всегда под индексом 0
        - CUDA_VISIBLE_DEVICES=0
        - NVIDIA_VISIBLE_DEVICES=0
 
-  # 2. Исправляем сервис инициализации (про него нельзя забывать!)
    ollama-pull-llama-gpu:
      volumes:
-       - ./storage-models/ollama:/root/.ollama # Тот же путь, чтобы он видел твои модели
-# ДОБАВЛЯЕМ СТРОГИЙ ФИЛЬТР КАРТЫ ДЛЯ ПУЛЛЕРА:
+       - ./storage-models/ollama:/root/.ollama
      environment:
+       # Внутри контейнера видна только одна карта — она всегда под индексом 0
        - CUDA_VISIBLE_DEVICES=0
        - NVIDIA_VISIBLE_DEVICES=0
-     # Назначаем ту же карту, чтобы не занимать 5070 Ti даже на секунду
      deploy:
        resources:
          reservations:
            devices:
              - driver: nvidia
-               device_ids: ['0']
+               device_ids: ['1'] # Та же вторая карта, чтобы не занимать первую
                capabilities: [gpu]
 
 #запрет регистрации пользователей
