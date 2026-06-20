@@ -105,6 +105,14 @@ services:
        start_period: 20s
 
 #изменение базовых хэлзичеков
+   databasus:
+     healthcheck:
+       test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/4005' 2>/dev/null || exit 1"]
+       interval: 30s
+       timeout: 10s
+       retries: 5
+       start_period: 60s
+
    appsmith:
      healthcheck:
        test: ["CMD-SHELL", "http_proxy= https_proxy= HTTP_PROXY= HTTPS_PROXY= curl -f -s http://localhost/api/v1/health || exit 1"]
