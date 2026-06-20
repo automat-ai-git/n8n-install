@@ -68,16 +68,16 @@ services:
        - OLLAMA_KEEP_ALIVE=5h
        - OLLAMA_SCHED_SPREAD=1
        # Внутри контейнера видна только одна карта — она всегда под индексом 0
-       - CUDA_VISIBLE_DEVICES=0
-       - NVIDIA_VISIBLE_DEVICES=0
+       - CUDA_VISIBLE_DEVICES=1
+       - NVIDIA_VISIBLE_DEVICES=1
 
    ollama-pull-llama-gpu:
      volumes:
        - ./storage-models/ollama:/root/.ollama
      environment:
        # Внутри контейнера видна только одна карта — она всегда под индексом 0
-       - CUDA_VISIBLE_DEVICES=0
-       - NVIDIA_VISIBLE_DEVICES=0
+       - CUDA_VISIBLE_DEVICES=1
+       - NVIDIA_VISIBLE_DEVICES=1
      deploy:
        resources:
          reservations:
