@@ -53,6 +53,7 @@ services:
        - "11434:11434" # Проброс порта: [Хост]:[Контейнер]
      volumes:
        - ./storage-models/ollama:/root/.ollama # Твои 113 ГБ моделей
+       - /mnt/d/models:/external-models:ro # Внешние GGUF/HF модели (только чтение)
      environment:
        - OLLAMA_HOST=0.0.0.0
        - OLLAMA_NUM_PARALLEL=1
@@ -174,6 +175,8 @@ services:
        - "--global_housekeeping_interval=2m"
        # Skip root cgroup stats (can take 3-8s to read in WSL2)
        - "--disable_root_cgroup_stats=true"
+       - "--v=1"
+       - "--stderrthreshold=WARNING"
    
    clickhouse:
      volumes:
