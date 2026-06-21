@@ -45,7 +45,8 @@ services:
        timeout: 10s
        retries: 3
 
-# GPU выбирается через OLLAMA_GPU_DEVICE в .env (дефолт 0)
+# GPU выбирается через OLLAMA_GPU_DEVICE в .env (дефолт 1)
+# WSL2: device_ids не ограничивает видимость GPU, фильтрация только через CUDA/NVIDIA_VISIBLE_DEVICES
    ollama-gpu:
      ports:
        - "11434:11434"
@@ -61,17 +62,17 @@ services:
        - OLLAMA_CONTEXT_LENGTH=131072
        - OLLAMA_KEEP_ALIVE=5h
        - OLLAMA_SCHED_SPREAD=1
-       # Внутри контейнера видна только одна карта — она всегда под индексом 0
-       - CUDA_VISIBLE_DEVICES=0
-       - NVIDIA_VISIBLE_DEVICES=0
+       # WSL2: контейнер видит все GPU, фильтруем через CUDA (1 = вторая карта)
+       - CUDA_VISIBLE_DEVICES=1
+       - NVIDIA_VISIBLE_DEVICES=1
 
    ollama-pull-llama-gpu:
      volumes:
        - ./storage-models/ollama:/root/.ollama
      environment:
-       # Внутри контейнера видна только одна карта — она всегда под индексом 0
-       - CUDA_VISIBLE_DEVICES=0
-       - NVIDIA_VISIBLE_DEVICES=0
+       # WSL2: контейнер видит все GPU, фильтруем через CUDA (1 = вторая карта)
+       - CUDA_VISIBLE_DEVICES=1
+       - NVIDIA_VISIBLE_DEVICES=1
 
 #запрет регистрации пользователей
    ragflow:
