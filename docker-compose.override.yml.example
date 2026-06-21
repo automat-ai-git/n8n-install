@@ -45,14 +45,8 @@ services:
        timeout: 10s
        retries: 3
 
+# GPU выбирается через OLLAMA_GPU_DEVICE в .env (дефолт 0)
    ollama-gpu:
-     deploy:
-       resources:
-         reservations:
-           devices:
-             - driver: nvidia
-               device_ids: ['1'] # Вторая карта на хосте (5070 Ti)
-               capabilities: [gpu]
      ports:
        - "11434:11434"
      volumes:
@@ -68,23 +62,16 @@ services:
        - OLLAMA_KEEP_ALIVE=5h
        - OLLAMA_SCHED_SPREAD=1
        # Внутри контейнера видна только одна карта — она всегда под индексом 0
-       - CUDA_VISIBLE_DEVICES=1
-       - NVIDIA_VISIBLE_DEVICES=1
+       - CUDA_VISIBLE_DEVICES=0
+       - NVIDIA_VISIBLE_DEVICES=0
 
    ollama-pull-llama-gpu:
      volumes:
        - ./storage-models/ollama:/root/.ollama
      environment:
        # Внутри контейнера видна только одна карта — она всегда под индексом 0
-       - CUDA_VISIBLE_DEVICES=1
-       - NVIDIA_VISIBLE_DEVICES=1
-     deploy:
-       resources:
-         reservations:
-           devices:
-             - driver: nvidia
-               device_ids: ['1'] # Та же вторая карта, чтобы не занимать первую
-               capabilities: [gpu]
+       - CUDA_VISIBLE_DEVICES=0
+       - NVIDIA_VISIBLE_DEVICES=0
 
 #запрет регистрации пользователей
    ragflow:
