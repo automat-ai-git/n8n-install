@@ -192,6 +192,7 @@ services:
    docling:
      volumes:
        - *meeting-data
+       - ./docling/tessdata/rus.traineddata:/usr/share/tesseract/tessdata/rus.traineddata:ro
 
    crawl4ai:
      volumes:
