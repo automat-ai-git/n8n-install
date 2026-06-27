@@ -190,6 +190,8 @@ services:
        - *meeting-data
 
    docling:
+     mem_limit: 16g
+     # Сброс утечки памяти без рестарта: curl -X POST http://docling:5001/clear/converters
      volumes:
        - *meeting-data
        - ./docling/tessdata/:/usr/share/tesseract/tessdata/
