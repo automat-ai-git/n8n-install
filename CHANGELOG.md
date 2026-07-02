@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-07-01
+
+### Added
+- **Ollama** - Optionally expose the Ollama API through Caddy under `OLLAMA_HOSTNAME`, protected by a generated Bearer token (`OLLAMA_CADDY_API_TOKEN`). Lets external tools reach locally-hosted models (native `/api/*` and OpenAI-compatible `/v1/*` endpoints); point DNS at the hostname to activate. Requests must send `Authorization: Bearer <token>`; unauthorized requests get `401`. A leaked token grants full control (including pulling/deleting models), so `make doctor` now reports an error if the hostname is set but the token is empty (#67).
+
+## [1.5.2] - 2026-06-27
+
+### Fixed
+- **n8n** - Fix `ERR_ERL_UNEXPECTED_X_FORWARDED_FOR` thrown by `express-rate-limit` behind the Caddy reverse proxy. The compose file set `N8N_TRUST_PROXY: true`, which n8n does not recognize, so Express `trust proxy` stayed `false`. Replaced it with the correct `N8N_PROXY_HOPS` (number of reverse proxy hops, default `1`, overridable via `.env` for multi-proxy setups) (#65).
+
 ## [1.5.1] - 2026-06-17
 
 ### Fixed
