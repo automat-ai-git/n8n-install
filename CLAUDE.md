@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is **n8n-install**, a Docker Compose-based installer that provides a comprehensive self-hosted environment for n8n workflow automation and numerous AI/automation services. The installer includes an interactive wizard, automated secret generation, and integrated HTTPS via Caddy.
+This is **Selfhost AI** (repository `selfhost-ai`, formerly `n8n-install`), a Docker Compose-based installer that provides a comprehensive self-hosted environment for n8n workflow automation and numerous AI/automation services. The installer includes an interactive wizard, automated secret generation, and integrated HTTPS via Caddy.
 
 ### Core Architecture
 
@@ -148,7 +148,7 @@ This project uses [Semantic Versioning](https://semver.org/). When updating `CHA
 1. Move items from `[Unreleased]` to new version section
 2. Add comparison link at bottom of file:
    ```markdown
-   [2.6.0]: https://github.com/kossakovsky/n8n-install/compare/v2.5.3...v2.6.0
+   [2.6.0]: https://github.com/kossakovsky/selfhost-ai/compare/v2.5.3...v2.6.0
    ```
 3. Update `[Unreleased]` link to compare from new version
 
@@ -231,12 +231,13 @@ Common profiles:
 - `monitoring`: Prometheus, Grafana, cAdvisor, node-exporter
 - `langfuse`: Langfuse observability (includes ClickHouse, MinIO, worker, web)
 - `cpu`, `gpu-nvidia`, `gpu-amd`: Ollama hardware profiles (mutually exclusive)
+- `invokeai-nvidia`, `invokeai-amd`, `invokeai-cpu`: InvokeAI hardware profiles (mutually exclusive)
 - `cloudflare-tunnel`: Cloudflare Tunnel for zero-trust access (see `cloudflare-instructions.md`)
 - `supabase`: Supabase BaaS (external compose, cloned at runtime; mutually exclusive with `dify`)
 - `dify`: Dify AI platform (external compose, cloned at runtime; mutually exclusive with `supabase`)
 - `gost`: HTTP/HTTPS proxy for routing AI service outbound traffic
 - `python-runner`: Internal Python execution environment (no external access)
-- `searxng`, `letta`, `lightrag`, `libretranslate`, `crawl4ai`, `docling`, `waha`, `comfyui`, `paddleocr`, `ragapp`, `gotenberg`, `postiz`: Additional optional services
+- `searxng`, `letta`, `hermes`, `lightrag`, `libretranslate`, `crawl4ai`, `docling`, `waha`, `comfyui`, `paddleocr`, `ragapp`, `gotenberg`, `postiz`: Additional optional services
 
 ## Architecture Patterns
 
@@ -278,6 +279,7 @@ depends_on:
 - All hostnames end with `_HOSTNAME`
 - Password hashes end with `_PASSWORD_HASH`
 - Use `${VAR:-default}` for optional vars with defaults
+- Always wrap `${VAR}` interpolations in `docker-compose.yml` in double quotes: `"${VAR:-default}"`
 
 ### Profile Activation Logic
 
@@ -293,9 +295,9 @@ fi
 Services making outbound HTTP requests to AI APIs (OpenAI, Anthropic, etc.) should use the shared proxy anchor:
 ```yaml
 x-proxy-env: &proxy-env
-  HTTP_PROXY: ${GOST_PROXY_URL:-}
-  HTTPS_PROXY: ${GOST_PROXY_URL:-}
-  NO_PROXY: ${GOST_NO_PROXY:-}
+  HTTP_PROXY: "${GOST_PROXY_URL:-}"
+  HTTPS_PROXY: "${GOST_PROXY_URL:-}"
+  NO_PROXY: "${GOST_NO_PROXY:-}"
 
 services:
   myservice:

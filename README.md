@@ -1,6 +1,6 @@
-# Self-Hosted AI Automation Platform
+# Selfhost AI — Self-Hosted AI Automation Platform
 
-[![GitHub stars](https://img.shields.io/github/stars/kossakovsky/n8n-install?style=social)](https://github.com/kossakovsky/n8n-install/stargazers)
+[![GitHub stars](https://img.shields.io/github/stars/kossakovsky/selfhost-ai?style=social)](https://github.com/kossakovsky/selfhost-ai/stargazers)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Docker](https://img.shields.io/badge/docker-ready-blue?logo=docker)](https://www.docker.com/)
 [![Ubuntu](https://img.shields.io/badge/Ubuntu-24.04%20LTS-E95420?logo=ubuntu&logoColor=white)](https://ubuntu.com/)
@@ -75,6 +75,10 @@ The installer also makes the following powerful open-source tools **available fo
 ✅ [**Gotenberg**](https://gotenberg.dev/) - A stateless API for converting HTML, Markdown, Word, Excel, and other documents to PDF, PNG, or JPEG. Available only within the Docker network for internal use by n8n workflows and other services.
 
 ✅ [**Grafana**](https://grafana.com/) - An open-source platform for visualizing monitoring data, helping you understand system performance at a glance.
+
+✅ [**Hermes Agent**](https://github.com/NousResearch/hermes-agent) - An open-source autonomous AI agent by Nous Research with skills, persistent memory, MCP support, and multi-agent workflows. Includes a web dashboard and an OpenAI-compatible API that n8n workflows can call directly.
+
+✅ [**InvokeAI**](https://invoke.ai/) - A professional creative engine for Stable Diffusion with a polished web UI, node-based workflow editor, inpainting/outpainting, and a REST API. Choose NVIDIA, AMD, or CPU hardware during install; models and outputs are stored in `./invokeai` on the host.
 
 ✅ [**Langfuse**](https://langfuse.com/) - An open-source platform to help you observe and understand how your AI agents are performing, making it easier to debug and improve them.
 
@@ -190,6 +194,8 @@ After successful installation, your services are up and running! Here's how to g
     - **Docling:** `docling.yourdomain.com` (Universal document converter with REST API; web UI available at `/ui`)
     - **Flowise:** `flowise.yourdomain.com` (Log in with the email address you provided during installation and the initial password from the summary report.)
     - **Grafana:** `grafana.yourdomain.com`
+    - **Hermes Agent:** `hermes.yourdomain.com` (Dashboard; log in with the email you provided during installation and the password from the Welcome Page. Requires an LLM provider key: run `docker compose -p localai run --rm hermes setup`. OpenAI-compatible API at `hermes-api.yourdomain.com/v1` with `Authorization: Bearer <HERMES_API_SERVER_KEY>`; internally at `http://hermes:8642/v1`. To let the agent manage Docker containers, mount `/var/run/docker.sock` into the `hermes` service via `docker-compose.override.yml` — off by default because it grants root-equivalent host access.)
+    - **InvokeAI:** `invokeai.yourdomain.com` (Stable Diffusion studio; download a model via the Model Manager on first visit)
     - **Langfuse:** `langfuse.yourdomain.com`
     - **Letta:** `letta.yourdomain.com`
     - **LibreTranslate:** `translate.yourdomain.com`
@@ -444,7 +450,7 @@ When you build automations in n8n that need to read or write files on your serve
 
 ## Contributors
 
-Want to see who has contributed to this project? Check out the [**GitHub Contributors Page**](https://github.com/kossakovsky/n8n-install/graphs/contributors)!
+Want to see who has contributed to this project? Check out the [**GitHub Contributors Page**](https://github.com/kossakovsky/selfhost-ai/graphs/contributors)!
 
 ## Telemetry
 

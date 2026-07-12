@@ -3,7 +3,9 @@ NOTES.md
 .env
 .env.bak
 .env.test
+hermes/
 neo4j/
+invokeai/
 searxng/settings.yml
 searxng/uwsgi*
 shared/

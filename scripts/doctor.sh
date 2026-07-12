@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# System diagnostics script for n8n-install
+# System diagnostics script for Selfhost AI
 # Checks DNS, SSL, containers, disk space, memory, and configuration
 
 # Source the utilities file and initialize paths
@@ -29,7 +29,7 @@ count_error() {
 }
 
 # Header
-log_box "n8n-install System Diagnostics"
+log_box "Selfhost AI System Diagnostics"
 
 # Check if .env file exists
 log_subheader "Configuration"
@@ -69,6 +69,18 @@ if [ -f "$ENV_FILE" ]; then
             count_ok "OLLAMA_CADDY_API_TOKEN is set (Ollama API is token-protected)"
         else
             count_error "OLLAMA_HOSTNAME is set but OLLAMA_CADDY_API_TOKEN is empty — the Ollama endpoint will reject all requests (401). Run 'make update' to regenerate the token."
+        fi
+    fi
+
+    # Hermes API server refuses to start without a key while the gateway and
+    # dashboard keep running, so an empty key half-kills the container: n8n
+    # calls to http://hermes:8642/v1 get connection refused with no error
+    # surfaced anywhere except the container flipping to unhealthy.
+    if is_profile_active "hermes"; then
+        if [ -n "$HERMES_API_SERVER_KEY" ]; then
+            count_ok "HERMES_API_SERVER_KEY is set (Hermes OpenAI-compatible API can start)"
+        else
+            count_error "hermes profile is active but HERMES_API_SERVER_KEY is empty — the Hermes API server will not start (connection refused on port 8642). Run 'make update' to regenerate the key."
         fi
     fi
 else
