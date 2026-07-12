@@ -144,6 +144,10 @@ services:
        # Модели и выход — по общей схеме storage-models / storage-user
        - ./storage-models/invokeai:/invokeai/models
        - ./storage-user/output/invokeai:/invokeai/outputs
+       # Модели ComfyUI (read-only) — регистрировать в UI через
+       # Model Manager -> Scan Folder -> /comfyui-models/... с опцией In-place,
+       # тогда общие чекпоинты НЕ дублируются на диске
+       - ./storage-models/comfyui:/comfyui-models:ro
      deploy:
        resources:
          reservations:
