@@ -134,14 +134,6 @@ services:
      healthcheck:
        test: ["CMD-SHELL", "curl -f -s http://localhost:8188 > /dev/null || exit 1"]
 
-   crawl4ai:
-     # Кэш браузеров Playwright — переживает пересоздание контейнера.
-     # Образ unclecode/crawl4ai:latest (0.9.1) собран без chromium_headless_shell:
-     # после каждого пересоздания с пустым кэшем нужен однократный
-     #   docker exec crawl4ai playwright install chromium
-     volumes:
-       - ./storage-models/ms-playwright:/home/appuser/.cache/ms-playwright
-
    invokeai-nvidia:
      environment:
        # WSL2: device_ids не изолирует GPU, фильтруем через CUDA (1 = вторая карта, как comfyui/ollama)
@@ -225,6 +217,11 @@ services:
    crawl4ai:
      volumes:
        - *meeting-data
+       # Кэш браузеров Playwright — переживает пересоздание контейнера.
+       # Образ unclecode/crawl4ai:latest (0.9.1) собран без chromium_headless_shell:
+       # после пересоздания с пустым кэшем нужен однократный
+       #   docker exec crawl4ai playwright install chromium
+       - ./storage-models/ms-playwright:/home/appuser/.cache/ms-playwright
 
    flowise:
      volumes:
