@@ -217,11 +217,9 @@ services:
    crawl4ai:
      volumes:
        - *meeting-data
-       # Кэш браузеров Playwright — переживает пересоздание контейнера.
-       # Образ unclecode/crawl4ai:latest (0.9.1) собран без chromium_headless_shell:
-       # после пересоздания с пустым кэшем нужен однократный
-       #   docker exec crawl4ai playwright install chromium
-       - ./storage-models/ms-playwright:/home/appuser/.cache/ms-playwright
+     # Известный баг образа 0.9.1: Playwright без браузера (crash-loop, unhealthy).
+     # Лечение после пересоздания контейнера (однократно, до фикса апстрима):
+     #   docker exec crawl4ai playwright install chromium
 
    flowise:
      volumes:
