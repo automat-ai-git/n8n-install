@@ -274,8 +274,8 @@ import /etc/caddy/addons/site-*.conf
 # SearXNG
 {$SEARXNG_HOSTNAME} {
     import service_tls
-# all internal ips excluded 10.0.0.0 BUT only first 31 adress included from 10.9.9.0-31
-    @protected not remote_ip 127.0.0.0/8 172.16.0.0/12 192.168.0.0/16 100.64.0.0/10 10.9.9.0/27
+    # Requests from trusted internal ranges bypass basic auth (set SEARXNG_TRUSTED_IPS in .env)
+    @protected not remote_ip {$SEARXNG_TRUSTED_IPS:127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16}
 
     basic_auth @protected {
         {$SEARXNG_USERNAME} {$SEARXNG_PASSWORD_HASH}
