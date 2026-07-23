@@ -32,21 +32,13 @@ services:
    gotenberg:
      volumes:
        - *meeting-data
-     healthcheck:
-       test: ["CMD", "curl", "-f", "-s", "http://localhost:3000/health"]
-       interval: 30s
-       timeout: 10s
-       retries: 3
+     # healthcheck убран — upstream v1.8.0 (#85) чинит его штатно (curl)
 
-   uptime-kuma:
-     healthcheck:
-       test: ["CMD", "curl", "-f", "http://localhost:3001"]
-       interval: 30s
-       timeout: 10s
-       retries: 3
+   # uptime-kuma healthcheck убран — upstream чинит его штатно (node-проверка)
 
-# GPU выбирается через OLLAMA_GPU_DEVICE в .env (дефолт 1)
-# WSL2: device_ids не ограничивает видимость GPU, фильтрация только через CUDA/NVIDIA_VISIBLE_DEVICES
+# GPU-пиннинг Ollama: пробуем нативный механизм upstream — OLLAMA_GPU_DEVICES в .env.
+# ВНИМАНИЕ (WSL2): device_ids не изолирует карты. Если нативный механизм не сработает
+# (обе карты видны / нагрузка уходит на GPU 0) — раскомментировать CUDA/NVIDIA ниже.
    ollama-gpu:
      ports:
        - "11434:11434"
@@ -62,24 +54,26 @@ services:
        - OLLAMA_CONTEXT_LENGTH=131072
        - OLLAMA_KEEP_ALIVE=5h
        - OLLAMA_SCHED_SPREAD=1
-       # WSL2: контейнер видит все GPU, фильтруем через CUDA (1 = вторая карта)
-       - CUDA_VISIBLE_DEVICES=1
-       - NVIDIA_VISIBLE_DEVICES=1
+       # WSL2 GPU-фильтр (откат нативного механизма — раскомментировать при проблемах):
+       # - CUDA_VISIBLE_DEVICES=1
+       # - NVIDIA_VISIBLE_DEVICES=1
 
    ollama-pull-llama-gpu:
      volumes:
        - ./storage-models/ollama:/root/.ollama
-     environment:
-       # WSL2: контейнер видит все GPU, фильтруем через CUDA (1 = вторая карта)
-       - CUDA_VISIBLE_DEVICES=1
-       - NVIDIA_VISIBLE_DEVICES=1
+     # GPU-фильтр закомментирован (pull не требует GPU; см. ollama-gpu выше):
+     # environment:
+     #   - CUDA_VISIBLE_DEVICES=1
+     #   - NVIDIA_VISIBLE_DEVICES=1
 
 #запрет регистрации пользователей
    ragflow:
      environment:
        REGISTER_ENABLED: "0"
      volumes:
-       - ./ragflow/nginx.conf:/etc/nginx/conf.d/ragflow.conf:ro
+       # nginx.conf-mount убран — upstream v1.8.0 (#86) отдал управление nginx образу;
+       # стоковый лимит загрузки 1024M (был 100M). Старый том localai_ragflow_data
+       # можно удалить после успешного старта: docker volume rm localai_ragflow_data
        - *meeting-data
 
 #чуть подольше поднмаем базу для того, чтобы не спешили остальные контейнеры, кто проверяет хэлзичек - postiz например
@@ -92,18 +86,8 @@ services:
        retries: 12
        start_period: 20s
 
-#изменение базовых хэлзичеков
-   databasus:
-     healthcheck:
-       test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/4005' 2>/dev/null || exit 1"]
-       interval: 30s
-       timeout: 10s
-       retries: 5
-       start_period: 60s
-
-   appsmith:
-     healthcheck:
-       test: ["CMD-SHELL", "http_proxy= https_proxy= HTTP_PROXY= HTTPS_PROXY= curl -f -s http://localhost/api/v1/health || exit 1"]
+# databasus / appsmith healthcheck-обходы убраны — upstream v1.8.0 (#85) чинит их штатно
+# (databasus — родная команда healthcheck, appsmith — тот же обход прокси через curl)
 
    comfyui:
      image: yanwk/comfyui-boot:cu130-slim-v2
@@ -123,7 +107,8 @@ services:
        - ./storage-user/input:/root/ComfyUI/input
        - ./storage-user/output:/root/ComfyUI/output
        - ./storage-user/workflows:/root/ComfyUI/user/default/workflows
-     # Активация GPU (аналог --gpus только 1)
+     # Активация GPU (аналог --gpus только 1) — ComfyUI upstream НЕ покрывает
+     # нативным механизмом GPU-пиннинга, поэтому оставляем ручной пиннинг как есть
      deploy:
        resources:
          reservations:
@@ -131,14 +116,14 @@ services:
              - driver: nvidia
                device_ids: ['1']
                capabilities: [gpu]
-     healthcheck:
-       test: ["CMD-SHELL", "curl -f -s http://localhost:8188 > /dev/null || exit 1"]
+     # healthcheck убран — upstream v1.8.0 (#85) чинит его штатно (python3/urllib)
 
    invokeai-nvidia:
-     environment:
-       # WSL2: device_ids не изолирует GPU, фильтруем через CUDA (1 = вторая карта, как comfyui/ollama)
-       - CUDA_VISIBLE_DEVICES=1
-       - NVIDIA_VISIBLE_DEVICES=1
+     # GPU-пиннинг: пробуем нативный INVOKEAI_GPU_DEVICES из .env (см. WSL2-caveat у ollama-gpu).
+     # Откат — раскомментировать CUDA/NVIDIA env и deploy-блок ниже.
+     # environment:
+     #   - CUDA_VISIBLE_DEVICES=1
+     #   - NVIDIA_VISIBLE_DEVICES=1
      volumes:
        # Корень (/invokeai: база, конфиг) остаётся в ./invokeai из базового compose
        # Модели и выход — по общей схеме storage-models / storage-user
@@ -148,26 +133,28 @@ services:
        # Model Manager -> Scan Folder -> /comfyui-models/... с опцией In-place,
        # тогда общие чекпоинты НЕ дублируются на диске
        - ./storage-models/comfyui:/comfyui-models:ro
-     deploy:
-       resources:
-         reservations:
-           devices:
-             - driver: nvidia
-               device_ids: ['1']
-               capabilities: [gpu]
+     # deploy:
+     #   resources:
+     #     reservations:
+     #       devices:
+     #         - driver: nvidia
+     #           device_ids: ['1']
+     #           capabilities: [gpu]
 
    paddleocr:
      volumes:
        - *meeting-data
      healthcheck:
-       test: ["CMD-SHELL", "curl -s http://localhost:8080 > /dev/null || exit 1"]
+       # тест берём из базового compose (upstream #85 чинит на /health);
+       # оставляем только start_period — PaddleOCR долго грузит модели
        start_period: 200s
 
    lightrag:
      volumes:
        - *meeting-data
      healthcheck:
-       test: ["CMD-SHELL", "python3 -c 'import socket; s = socket.socket(); s.connect((\"localhost\", 9621))' || exit 1"]
+       # тест берём из базового compose (upstream #85: python + /health + обход прокси);
+       # оставляем только start_period
        start_period: 120s
 
 # устранение проблем зависания и доступа к дискам в WSL2
