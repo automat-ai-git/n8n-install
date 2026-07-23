@@ -19,7 +19,7 @@ Upstream: [kossakovsky/selfhost-ai](https://github.com/kossakovsky/selfhost-ai) 
 | 4 | `QDRANT__SERVICE__JWT_RBAC: "${QDRANT_MULTITENANCY}"` у qdrant | Мультитенантность Qdrant (JWT RBAC) |
 | 5 | У caddy добавлены env: `CADDY_TRUSTED_PROXIES`, `SEARXNG_TRUSTED_IPS` | Параметризация доверенных сетей (см. Caddyfile) |
 
-> **Убрано в v1.8.0:** ручной GPU-пиннинг Ollama (`device_ids: ['${OLLAMA_GPU_DEVICE:-0}']`) — заменён на нативный механизм upstream (`OLLAMA_GPU_COUNT` / `OLLAMA_GPU_DEVICES`). Переменная `OLLAMA_GPU_DEVICE` из `.env.example` удалена.
+> **Изменено в v1.8.0:** в базовом compose ушла форковая правка `device_ids: ['${OLLAMA_GPU_DEVICE:-0}']` — взят upstream-вариант `count: "${OLLAMA_GPU_COUNT:-1}"` (на WSL2 резервирование карт всё равно игнорируется). Переменная `OLLAMA_GPU_DEVICE` из `.env.example` удалена. Реальный GPU-пиннинг делается в override через `CUDA_VISIBLE_DEVICES` (см. ниже) — нативный `OLLAMA_GPU_DEVICES` на WSL2 не изолирует, не используем.
 
 ### Caddyfile / caddy-addon
 
@@ -46,8 +46,7 @@ Upstream: [kossakovsky/selfhost-ai](https://github.com/kossakovsky/selfhost-ai) 
 - WSL2-фиксы: `node-exporter`/`cadvisor` (иначе load average >900), `clickhouse` disable_syslogs
 - `mem_limit: 16g` для docling; `*meeting-data` тома у многих сервисов; `prometheus` retention
 
-Закомментировано в v1.8.0 (пробуем нативный механизм upstream, откат — раскомментировать):
-- GPU-пиннинг `ollama-gpu` / `ollama-pull-llama-gpu` / `invokeai-nvidia` через `CUDA_VISIBLE_DEVICES` — заменяем на `OLLAMA_GPU_DEVICES` / `INVOKEAI_GPU_DEVICES` в `.env`. **WSL2 caveat: device_ids не изолирует карты** — если не сработает, раскомментировать CUDA/NVIDIA.
+GPU-пиннинг (решение v1.8.0): оставляем **ручной способ через `CUDA_VISIBLE_DEVICES=1`** для `ollama-gpu`, `ollama-pull-llama-gpu`, `comfyui`, `invokeai-nvidia` (вторая карта = 5070 Ti, индекс 1 на хосте; внутри контейнера после фильтра видна одна карта под индексом 0). Нативный механизм upstream (`OLLAMA_GPU_DEVICES` / `INVOKEAI_GPU_DEVICES`) **НЕ используем** — он работает через `device_ids`, а на WSL2 device_ids не изолирует карты (проверено на сервере). `*_GPU_DEVICES` в `.env` оставляем пустыми.
 
 Убрано в v1.8.0 (покрыто сборкой):
 - healthcheck-обходы `gotenberg`, `uptime-kuma`, `databasus`, `appsmith`, `comfyui`, `paddleocr`, `lightrag` — upstream #85 починил их штатно (у paddleocr/lightrag оставлен только `start_period` под медленный старт)

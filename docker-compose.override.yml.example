@@ -36,9 +36,11 @@ services:
 
    # uptime-kuma healthcheck убран — upstream чинит его штатно (node-проверка)
 
-# GPU-пиннинг Ollama: пробуем нативный механизм upstream — OLLAMA_GPU_DEVICES в .env.
-# ВНИМАНИЕ (WSL2): device_ids не изолирует карты. Если нативный механизм не сработает
-# (обе карты видны / нагрузка уходит на GPU 0) — раскомментировать CUDA/NVIDIA ниже.
+# GPU-пиннинг Ollama (проверенный способ для WSL2).
+# Нативный механизм upstream (OLLAMA_GPU_DEVICES в .env) НЕ используем: он работает через
+# device_ids, а на WSL2 device_ids не изолирует карты. Изоляция только через CUDA_VISIBLE_DEVICES.
+# ПРИМЕЧАНИЕ (хост): вторая карта — 5070 Ti (индекс 1 на хосте). Внутри контейнера после
+# фильтра CUDA видна только одна карта — она всегда под индексом 0.
    ollama-gpu:
      ports:
        - "11434:11434"
@@ -54,17 +56,17 @@ services:
        - OLLAMA_CONTEXT_LENGTH=131072
        - OLLAMA_KEEP_ALIVE=5h
        - OLLAMA_SCHED_SPREAD=1
-       # WSL2 GPU-фильтр (откат нативного механизма — раскомментировать при проблемах):
-       # - CUDA_VISIBLE_DEVICES=1
-       # - NVIDIA_VISIBLE_DEVICES=1
+       # WSL2: фильтруем на вторую карту (индекс 1 на хосте = 5070 Ti)
+       - CUDA_VISIBLE_DEVICES=1
+       - NVIDIA_VISIBLE_DEVICES=1
 
    ollama-pull-llama-gpu:
      volumes:
        - ./storage-models/ollama:/root/.ollama
-     # GPU-фильтр закомментирован (pull не требует GPU; см. ollama-gpu выше):
-     # environment:
-     #   - CUDA_VISIBLE_DEVICES=1
-     #   - NVIDIA_VISIBLE_DEVICES=1
+     environment:
+       # Та же вторая карта, чтобы не занимать первую
+       - CUDA_VISIBLE_DEVICES=1
+       - NVIDIA_VISIBLE_DEVICES=1
 
 #запрет регистрации пользователей
    ragflow:
@@ -119,11 +121,12 @@ services:
      # healthcheck убран — upstream v1.8.0 (#85) чинит его штатно (python3/urllib)
 
    invokeai-nvidia:
-     # GPU-пиннинг: пробуем нативный INVOKEAI_GPU_DEVICES из .env (см. WSL2-caveat у ollama-gpu).
-     # Откат — раскомментировать CUDA/NVIDIA env и deploy-блок ниже.
-     # environment:
-     #   - CUDA_VISIBLE_DEVICES=1
-     #   - NVIDIA_VISIBLE_DEVICES=1
+     # GPU-пиннинг тем же способом, что comfyui/ollama (нативный INVOKEAI_GPU_DEVICES
+     # не используем — device_ids на WSL2 не изолирует; см. примечание у ollama-gpu)
+     environment:
+       # WSL2: фильтруем на вторую карту (5070 Ti, индекс 1 на хосте)
+       - CUDA_VISIBLE_DEVICES=1
+       - NVIDIA_VISIBLE_DEVICES=1
      volumes:
        # Корень (/invokeai: база, конфиг) остаётся в ./invokeai из базового compose
        # Модели и выход — по общей схеме storage-models / storage-user
@@ -133,13 +136,13 @@ services:
        # Model Manager -> Scan Folder -> /comfyui-models/... с опцией In-place,
        # тогда общие чекпоинты НЕ дублируются на диске
        - ./storage-models/comfyui:/comfyui-models:ro
-     # deploy:
-     #   resources:
-     #     reservations:
-     #       devices:
-     #         - driver: nvidia
-     #           device_ids: ['1']
-     #           capabilities: [gpu]
+     deploy:
+       resources:
+         reservations:
+           devices:
+             - driver: nvidia
+               device_ids: ['1']
+               capabilities: [gpu]
 
    paddleocr:
      volumes:
