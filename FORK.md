@@ -5,7 +5,7 @@ Upstream: [kossakovsky/selfhost-ai](https://github.com/kossakovsky/selfhost-ai) 
 
 Назначение файла: при каждом мерже upstream проверять по этому списку, что кастомизации форка не потерялись. Обновлять при добавлении/удалении собственных изменений.
 
-Последняя синхронизация с upstream: **v1.8.0** (2026-07-23).
+Последняя синхронизация с upstream: **v1.8.2** (2026-07-24).
 
 ## Отличия в отслеживаемых файлах
 
@@ -39,7 +39,8 @@ Upstream: [kossakovsky/selfhost-ai](https://github.com/kossakovsky/selfhost-ai) 
 ### docker-compose.override.yml.example (машинно-специфичный слой WSL2)
 
 Живые кастомизации (рабочие):
-- `comfyui` — кастомный образ `yanwk/comfyui-boot`, GPU-пиннинг `device_ids: ['1']` (**upstream comfyui GPU не покрывает — держим ручной**), тома моделей
+- `comfyui` — кастомный образ `yanwk/comfyui-boot`, GPU-пиннинг `device_ids: ['1']` (**upstream comfyui GPU не покрывает — держим ручной**), тома моделей. HF-кэш монтируется как канонический `$HF_HOME` (`storage-models/huggingface:/root/.cache/huggingface`, БЕЗ `/hub`) — на сервере данные перенесены в `storage-models/huggingface/hub/`; whisper (кастомный сервис) монтирует так же
+- `ollama-gpu` env-тюнинг (KEEP_ALIVE=5h, CONTEXT_LENGTH=131072, MAX_LOADED_MODELS=1, SCHED_SPREAD=1, FLASH_ATTENTION=1 и др.) — с v1.8.1/1.8.2 upstream вынес большинство в `.env`, но `OLLAMA_FLASH_ATTENTION` не вынесен, поэтому override для Ollama остаётся; наши значения побеждают базовый compose
 - `invokeai-nvidia` — тома моделей (шаринг с ComfyUI read-only через `/comfyui-models`, выход в `storage-user/output/invokeai`)
 - `postgres` — тонкий healthcheck-тайминг (start_period 20s, retries 12) под медленный старт postiz (**НЕ обход бага — не удалять**)
 - `ollama-gpu` — свои `OLLAMA_*` env (context 131072, keep-alive 5h и т.д.), внешние модели `/mnt/d/models`
@@ -85,5 +86,6 @@ GPU-пиннинг (решение v1.8.0): оставляем **ручной с
 
 ## История
 
-- **v1.8.0** (2026-07-23): удалён Hermes (upstream #88 — не настраивали, потери нет); нативный GPU-пиннинг вместо ручного; чистка healthcheck-обходов и ragflow nginx.
+- **v1.8.2** (2026-07-24): бесконфликтный мерж — Ollama-тюнинг вынесен upstream в `.env` (наш override продолжает побеждать), Caddy host.docker.internal, доки. Отдельно: comfyui/whisper переведены на канонический `$HF_HOME` (данные на сервере перенесены в `huggingface/hub/`).
+- **v1.8.0** (2026-07-23): удалён Hermes (upstream #88 — не настраивали, потери нет); GPU-пиннинг оставлен ручным (CUDA_VISIBLE_DEVICES, WSL2); чистка healthcheck-обходов и ragflow nginx.
 - **v1.7.1** (2026-07-12): первый большой мерж после переименования проекта; добавлены InvokeAI, вынос секретов из публичного репо.
