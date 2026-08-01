@@ -46,7 +46,7 @@ services:
        - "11434:11434"
      volumes:
        - ./storage-models/ollama:/root/.ollama
-       - /mnt/d/models:/external-models:ro
+       - /mnt/e/models:/external-models:ro
      environment:
        - OLLAMA_HOST=0.0.0.0
        - OLLAMA_NUM_PARALLEL=1
