@@ -34,7 +34,15 @@ fi
 # Fix ownership of the entire project directory
 if [[ -d "$PROJECT_ROOT" ]]; then
     log_info "Setting ownership of $PROJECT_ROOT to $REAL_USER:$REAL_GROUP"
-    chown -R "$REAL_USER:$REAL_GROUP" "$PROJECT_ROOT"
+
+    # Exclude runtime data dirs that must stay owned by their container UID, not
+    # the host user. Supabase runs Postgres as uid 105 inside the container, so
+    # its PGDATA (supabase/docker/volumes/db/data) must NOT be chowned to the host
+    # user - otherwise Postgres backends fail with "could not open file
+    # global/pg_filenode.map: Permission denied" and PostgREST stays unhealthy.
+    find "$PROJECT_ROOT" \
+        -path "$PROJECT_ROOT/supabase/docker/volumes/db/data" -prune -o \
+        -exec chown "$REAL_USER:$REAL_GROUP" {} +
 
     # Ensure .env has restricted permissions (readable only by owner)
     if [[ -f "$ENV_FILE" ]]; then
