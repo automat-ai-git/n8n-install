@@ -18,8 +18,20 @@ Upstream: [kossakovsky/selfhost-ai](https://github.com/kossakovsky/selfhost-ai) 
 | 3 | `start_period: 60s` в healthcheck n8n (вместо 30s) | Медленный старт n8n |
 | 4 | `QDRANT__SERVICE__JWT_RBAC: "${QDRANT_MULTITENANCY}"` у qdrant | Мультитенантность Qdrant (JWT RBAC) |
 | 5 | У caddy добавлены env: `CADDY_TRUSTED_PROXIES`, `SEARXNG_TRUSTED_IPS` | Параметризация доверенных сетей (см. Caddyfile) |
+| 6 | В анкоре `x-n8n-worker-runner` добавлены env `RUNNER_WATCHDOG_ENABLED`, `RUNNER_BROKER_GRACE` | Проброс настроек broker-watchdog раннера (см. раздел ниже) |
 
 > **Изменено в v1.8.0:** в базовом compose ушла форковая правка `device_ids: ['${OLLAMA_GPU_DEVICE:-0}']` — взят upstream-вариант `count: "${OLLAMA_GPU_COUNT:-1}"` (на WSL2 резервирование карт всё равно игнорируется). Переменная `OLLAMA_GPU_DEVICE` из `.env.example` удалена. Реальный GPU-пиннинг делается в override через `CUDA_VISIBLE_DEVICES` (см. ниже) — нативный `OLLAMA_GPU_DEVICES` на WSL2 не изолирует, не используем.
+
+### n8n/Dockerfile.runner + n8n/runner-watchdog.sh (broker-watchdog раннера)
+
+**Проблема:** раннер — сайдкар в netns своего воркера (`network_mode: "service:n8n-worker-N"`, брокер на `127.0.0.1:5679`). При рестарте воркера (рестарт общей БД, OOM, апдейт) netns умирает, а `task-runner-launcher` навсегда виснет на `Waiting for task broker` — процесс жив, поэтому `restart: unless-stopped` не срабатывает, раннер остаётся «зомби» до ручного рестарта (задокументированный инцидент 2026-08-23: воркер-3 авто-рестарт 11:01, раннер-3 поднят руками только в 21:30).
+
+**Решение (без нового механизма):** обёртка `runner-watchdog.sh` шадоуит бинарь launcher (реальный → `.real`), запускает его как ребёнка и следит за брокером; если тот недоступен дольше `RUNNER_BROKER_GRACE` (после успешного коннекта) — обёртка выходит, и штатная политика Docker `restart: unless-stopped` пересоздаёт раннер в **текущий** netns воркера. Перезапуск — Docker'а, сигналы — ОС, реконнект — n8n; скрипт лишь решает, когда дать Docker'у сработать. Живую задачу не рвёт (стреляет только когда брокер и так мёртв).
+
+- `n8n/Dockerfile.runner`: +3 строки (`mv` реального launcher в `.real`, `COPY` обёртки на его имя, `chmod +x`). **Строку `entrypoint` в compose НЕ трогаем** — апстрим может её менять без конфликта; вся правка изолирована здесь.
+- Обёртка version-agnostic: не знает версию launcher, просто «запусти что лежит и следи за портом 5679» → требование «образ раннера = версия n8n» не нарушается.
+- Отключение: `RUNNER_WATCHDOG_ENABLED=false` → обёртка делает `exec` реального launcher, поведение байт-в-байт как сток (без пересборки).
+- При мерже: если апстрим сам поменяет `Dockerfile.runner` — проверить, что путь `/usr/local/bin/task-runner-launcher` не изменился (иначе `mv` упадёт на сборке — заметно сразу).
 
 ### Caddyfile / caddy-addon
 
@@ -32,6 +44,7 @@ Upstream: [kossakovsky/selfhost-ai](https://github.com/kossakovsky/selfhost-ai) 
 - `N8N_WEBHOOK_URL=` — отдельный вебхук-домен (см. правку №1 compose)
 - `GENERIC_TIMEZONE="Europe/Moscow"`, `TZ="Europe/Moscow"`
 - `SEARXNG_TRUSTED_IPS`, `CADDY_TRUSTED_PROXIES` — generic-дефолты; реальные значения только в рабочем `.env` (в репо не хранятся)
+- `RUNNER_WATCHDOG_ENABLED=true`, `RUNNER_BROKER_GRACE=120` — broker-watchdog раннера (см. раздел `Dockerfile.runner` выше)
 - `GOST_NO_PROXY` — не забывать добавлять новые сервисы upstream; реальный суженный список подсетей — только в рабочем `.env`
 - `QDRANT_MULTITENANCY=true`
 - `POSTIZ_DISABLE_REGISTRATION=true`
@@ -61,6 +74,11 @@ GPU-пиннинг (решение v1.8.0): оставляем **ручной с
 - `paddlex/ocr_config.yml` — расширенная конфигурация PaddleOCR
 - `storage/`, `storage-models/`, `storage-user/` — структура каталогов под модели и данные (`.gitkeep`)
 - `docling/tessdata/` — данные tesseract для docling
+- `n8n/runner-watchdog.sh` — обёртка-сторож над task-runner-launcher (см. раздел `Dockerfile.runner` выше)
+
+### .gitattributes
+
+- `*.sh text eol=lf` — шелл-скрипты всегда LF (иначе `bad interpreter` в Linux-контейнере при чекауте на Windows)
 
 ### Удалено в форке
 

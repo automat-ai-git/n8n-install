@@ -10,4 +10,15 @@ RUN pnpm add cheerio axios moment lodash
 # Copy task runner configuration
 COPY n8n-task-runners.json /etc/n8n-task-runners.json
 
+# --- fork: broker watchdog around the launcher (see FORK.md) ---
+# Shadow the real launcher with a thin supervisor that exits the container when
+# the task broker is permanently unreachable (worker restarted -> sidecar
+# stranded in its dead network namespace), so `restart: unless-stopped` re-
+# attaches the runner. The compose `entrypoint` (which calls task-runner-launcher)
+# is intentionally NOT touched, so upstream can change it without conflict.
+RUN mv /usr/local/bin/task-runner-launcher /usr/local/bin/task-runner-launcher.real
+COPY runner-watchdog.sh /usr/local/bin/task-runner-launcher
+RUN chmod +x /usr/local/bin/task-runner-launcher
+# --- end fork ---
+
 USER runner
