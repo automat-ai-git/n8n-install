@@ -1,5 +1,6 @@
 .DS_Store
 NOTES.md
+FORK.md
 .env
 .env.bak
 .env.test
@@ -14,6 +15,7 @@ dify/
 volumes/
 docker-compose.override.yml
 docker-compose.n8n-workers.yml
+docker-compose.ollama-instances.yml
 postiz.env
 welcome/data.json
 welcome/changelog.json
