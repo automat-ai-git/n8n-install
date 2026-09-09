@@ -24,8 +24,9 @@
 # DO NOT enable on native Linux servers — it disables disk metrics.
 #
 
-# Общая папка с данными (документы, аудио, видео) — только чтение
-x-meeting-data: &meeting-data /mnt/e/meeting-data:/meeting-data:ro
+# Общая папка с данными (документы, аудио, видео) — только чтение.
+# Замените путь на свой каталог с данными.
+x-meeting-data: &meeting-data /path/to/your/data:/meeting-data:ro
 
 services:
 
@@ -39,7 +40,7 @@ services:
 # GPU-пиннинг Ollama (проверенный способ для WSL2).
 # Нативный механизм upstream (OLLAMA_GPU_DEVICES в .env) НЕ используем: он работает через
 # device_ids, а на WSL2 device_ids не изолирует карты. Изоляция только через CUDA_VISIBLE_DEVICES.
-# ПРИМЕЧАНИЕ (хост): вторая карта — 5070 Ti (индекс 1 на хосте). Внутри контейнера после
+# ПРИМЕЧАНИЕ (хост): пинним на вторую карту (индекс 1 на хосте). Внутри контейнера после
 # фильтра CUDA видна только одна карта — она всегда под индексом 0.
    ollama-gpu:
      ports:
@@ -56,7 +57,7 @@ services:
        - OLLAMA_CONTEXT_LENGTH=131072
        - OLLAMA_KEEP_ALIVE=5h
        - OLLAMA_SCHED_SPREAD=1
-       # WSL2: фильтруем на вторую карту (индекс 1 на хосте = 5070 Ti)
+       # WSL2: фильтруем на вторую карту (индекс 1 на хосте)
        - CUDA_VISIBLE_DEVICES=1
        - NVIDIA_VISIBLE_DEVICES=1
 
@@ -92,7 +93,9 @@ services:
 # (databasus — родная команда healthcheck, appsmith — тот же обход прокси через curl)
 
    comfyui:
-     image: yanwk/comfyui-boot:cu130-slim-v2
+     # megapak: all-in-one (dev-kit + десятки custom nodes), CUDA 13.0 / Python 3.13 / PyTorch 2.11.
+     # Заметно тяжелее slim по размеру образа. Тег плавающий в рамках линии pt211.
+     image: yanwk/comfyui-boot:cu130-megapak-pt211
      container_name: comfyui
      # Убираем --cpu, оставляем только то, что просил автор
      environment:
@@ -124,7 +127,7 @@ services:
      # GPU-пиннинг тем же способом, что comfyui/ollama (нативный INVOKEAI_GPU_DEVICES
      # не используем — device_ids на WSL2 не изолирует; см. примечание у ollama-gpu)
      environment:
-       # WSL2: фильтруем на вторую карту (5070 Ti, индекс 1 на хосте)
+       # WSL2: фильтруем на вторую карту (индекс 1 на хосте)
        - CUDA_VISIBLE_DEVICES=1
        - NVIDIA_VISIBLE_DEVICES=1
      volumes:
@@ -202,11 +205,31 @@ services:
        - *meeting-data
 
    docling:
+     # GPU-вариант: CUDA-сборка docling (PyTorch с CUDA внутри). CPU-образ так не ускорить.
+     image: quay.io/docling-project/docling-serve-cu130:latest
      mem_limit: 16g
      # Сброс утечки памяти без рестарта: curl -X POST http://docling:5001/clear/converters
+     environment:
+       - DOCLING_DEVICE=cuda
+       - DOCLING_SERVE_LOAD_MODELS_AT_BOOT=false
+       - DOCLING_SERVE_ENABLE_REMOTE_SERVICES=true    # разрешить внешние OCR/VLM-сервисы
+       - DOCLING_SERVE_DEFAULT_OCR_KIND=auto          # движок auto, но переключаемый
+       - DOCLING_SERVE_ALLOW_CUSTOM_VLM_CONFIG=true   # клиент может выбрать внешний движок
+       # WSL2: пиннинг на вторую карту (индекс 1) — тем же способом, что comfyui/ollama
+       - CUDA_VISIBLE_DEVICES=1
+       - NVIDIA_VISIBLE_DEVICES=1
      volumes:
        - *meeting-data
        - ./docling/tessdata/:/usr/share/tesseract/tessdata/
+     # Активация доступа к карте. На WSL2 device_ids карту не изолирует —
+     # изоляция делается через *_VISIBLE_DEVICES выше.
+     deploy:
+       resources:
+         reservations:
+           devices:
+             - driver: nvidia
+               device_ids: ['1']
+               capabilities: [gpu]
 
    crawl4ai:
      volumes:
