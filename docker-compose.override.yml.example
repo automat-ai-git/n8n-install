@@ -206,7 +206,7 @@ services:
 
    docling:
      # GPU-вариант: CUDA-сборка docling (PyTorch с CUDA внутри). CPU-образ так не ускорить.
-     image: quay.io/docling-project/docling-serve-cu130:latest
+     image: quay.io/docling-project/docling-serve-cu130:main
      mem_limit: 16g
      # Сброс утечки памяти без рестарта: curl -X POST http://docling:5001/clear/converters
      environment:
