@@ -244,6 +244,9 @@ services:
        - *meeting-data
 
    letta:
+     # Пин на последний СТАРЫЙ Python-Letta (0.31.14, 2026-09-08). С 0.32.0/latest
+     # (2026-09-09) образ = новый "Letta Code", несовместим со старыми данными Postgres.
+     image: letta/letta:0.31.14
      volumes:
        - *meeting-data
 
