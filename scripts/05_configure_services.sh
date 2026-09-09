@@ -179,12 +179,7 @@ if is_profile_active "n8n-sandbox"; then
                 log_warning "$SYSBOX_REASON"
                 log_warning "The n8n sandbox runner will run privileged. Re-run 'make update' after fixing the Sysbox prerequisites to switch to sysbox-runc."
             else
-                IFS=',' read -r -a profiles_array <<< "${COMPOSE_PROFILES_VALUE// /}"
-                new_profiles=()
-                for p in "${profiles_array[@]}"; do
-                    [[ "$p" == "n8n-sandbox" ]] || new_profiles+=("$p")
-                done
-                COMPOSE_PROFILES_VALUE=$(IFS=','; echo "${new_profiles[*]}")
+                COMPOSE_PROFILES_VALUE=$(remove_compose_profile "$COMPOSE_PROFILES_VALUE" "n8n-sandbox")
                 COMPOSE_PROFILES="$COMPOSE_PROFILES_VALUE"
                 update_compose_profiles "$COMPOSE_PROFILES_VALUE"
                 write_env_var "N8N_SANDBOX_RUNNER_RUNTIME" "runc"
@@ -287,15 +282,8 @@ fi
 # Safety: If Supabase is present, remove Dify from COMPOSE_PROFILES (no prompts)
 # ----------------------------------------------------------------
 if is_profile_active "supabase"; then
-  IFS=',' read -r -a profiles_array <<< "$COMPOSE_PROFILES_VALUE"
-  new_profiles=()
-  for p in "${profiles_array[@]}"; do
-    if [[ "$p" != "dify" ]]; then
-      new_profiles+=("$p")
-    fi
-  done
-  COMPOSE_PROFILES_VALUE_UPDATED=$(IFS=','; echo "${new_profiles[*]}")
-  if [[ "$COMPOSE_PROFILES_VALUE_UPDATED" != "$COMPOSE_PROFILES_VALUE" ]]; then
+  COMPOSE_PROFILES_VALUE_UPDATED=$(remove_compose_profile "$COMPOSE_PROFILES_VALUE" "dify")
+  if [[ "$COMPOSE_PROFILES_VALUE_UPDATED" != "${COMPOSE_PROFILES_VALUE// /}" ]]; then
     write_env_var "COMPOSE_PROFILES" "$COMPOSE_PROFILES_VALUE_UPDATED"
     log_info "Supabase present: removed 'dify' from COMPOSE_PROFILES due to conflict with Supabase."
     COMPOSE_PROFILES_VALUE="$COMPOSE_PROFILES_VALUE_UPDATED"

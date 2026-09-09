@@ -241,6 +241,7 @@ Key functions:
 - `read_env_var "VAR_NAME"` / `write_env_var "VAR_NAME" "value"` - .env manipulation
 - `load_env` - Source .env file to make variables available
 - `update_compose_profiles "profile1,profile2"` - Update COMPOSE_PROFILES in .env
+- `remove_compose_profile "$list" "profile"` - Print a comma list without one profile (space-tolerant)
 - `gen_password 32` / `gen_hex 64` / `gen_base64 64` - Secret generation
 - `generate_bcrypt_hash "password"` - Create Caddy-compatible bcrypt hash (uses Caddy binary)
 - `json_escape "string"` - Escape string for JSON output

@@ -553,6 +553,21 @@ update_compose_profiles() {
     echo "COMPOSE_PROFILES=${profiles}" >> "$env_file"
 }
 
+# Remove one profile from a comma-separated COMPOSE_PROFILES value and print the
+# result. Spaces around commas are dropped, matching is_profile_active.
+# Usage: new_value=$(remove_compose_profile "$COMPOSE_PROFILES_VALUE" "dify")
+remove_compose_profile() {
+    local profiles="${1// /}"
+    local profile="$2"
+    local -a items kept=()
+    IFS=',' read -r -a items <<< "$profiles"
+    local p
+    for p in "${items[@]}"; do
+        [[ -z "$p" || "$p" == "$profile" ]] || kept+=("$p")
+    done
+    (IFS=','; echo "${kept[*]}")
+}
+
 #=============================================================================
 # DEBIAN_FRONTEND MANAGEMENT
 #=============================================================================

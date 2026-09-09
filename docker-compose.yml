@@ -358,7 +358,9 @@ services:
   # ---------------------------------------------------------------------------
   # One-shot: generates the CA and leaf certs into the shared volume, then exits.
   # Skips generation when the certs already exist, so it is safe on every start
-  # (set SANDBOX_TLS_REGEN=1 on this service to force new certs).
+  # (set SANDBOX_TLS_REGEN=1 on this service to force new certs). Keys stay 0600:
+  # /tls/api is chowned to the api image's user, /tls/runner stays root's and the
+  # runner runs as root (privileged, or ID-mapped root under sysbox-runc).
   sandbox-certs:
     image: "ghcr.io/n8n-io/n8n-sandbox-service-api:${N8N_SANDBOX_VERSION:-latest}"
     container_name: sandbox-certs
@@ -370,8 +372,8 @@ services:
     command:
       - >
         bootstrap-mtls.sh --out-dir /tls --api-san sandbox-api
-        --control-san-prefix sandbox-runner --world-readable &&
-        chown -R sandbox-api:sandbox-api /tls/api && chmod -R a+rX /tls
+        --control-san-prefix sandbox-runner &&
+        chown -R sandbox-api:sandbox-api /tls/api
     environment:
       NUM_RUNNERS: "1"
     volumes:
