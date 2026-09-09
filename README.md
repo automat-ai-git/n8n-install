@@ -62,6 +62,8 @@ The installer also makes the following powerful open-source tools **available fo
 
 ✅ [**n8n-MCP**](https://github.com/czlonkowski/n8n-mcp) - A Model Context Protocol server that gives AI coding assistants (Claude Code, Cursor, Windsurf, VS Code Copilot) indexed access to every n8n node's documentation, property schemas and thousands of workflow templates - and, once you add an n8n API key, the ability to create and update workflows in your n8n instance straight from your IDE.
 
+✅ [**n8n Assistant sandbox**](https://docs.n8n.io/deploy/host-n8n/configure-n8n/set-up-n8n-assistant) - Code-execution sandbox for n8n's built-in AI Assistant and the Agents preview (n8n's own sandbox service, Docker-in-Docker isolated with Sysbox; internal only, see [below](#n8n-assistant-sandbox-ai-assistant--agents)).
+
 ✅ [**ComfyUI**](https://github.com/comfyanonymous/ComfyUI) - A powerful, node-based UI for Stable Diffusion workflows. Build and run image-generation pipelines visually, with support for custom nodes and extensions.
 
 ✅ [**Crawl4ai**](https://github.com/unclecode/crawl4ai) - A flexible web crawler designed for AI, enabling you to extract data from websites for your projects.
@@ -277,6 +279,21 @@ The custom n8n Docker image (`n8n/Dockerfile.n8n`) includes the following system
   - Extracting audio from video files
   - Resizing or compressing media files
   - Generating thumbnails from videos
+
+### n8n Assistant sandbox (AI Assistant / Agents)
+
+n8n's built-in AI Assistant and the Agents preview build, edit and debug workflows through conversation, and on a self-hosted instance they need a code-execution sandbox before they do anything (the Instance AI settings page shows `Code sandbox: Not set` until one exists). Select **n8n Assistant sandbox** in the wizard (`n8n-sandbox` profile, requires `n8n`) and the installer adds n8n's own sandbox stack next to n8n: a one-shot certificate job, the `sandbox-api` service and a Docker-in-Docker `sandbox-runner-1`. Nothing is published; n8n talks to `sandbox-api` over the internal network. Budget about 4 GB of extra RAM for it.
+
+After installation, open n8n → **Settings → Instance AI** and add a model API key (Anthropic, OpenAI, OpenRouter or any OpenAI-compatible endpoint). The sandbox and, when the `searxng` profile is active, web search through the bundled SearXNG are already wired in. n8n's docs position this bundled sandbox as the self-hosted option and Daytona as the hosted one; the Agents knowledge base is the only feature that needs Daytona.
+
+**How the runner is isolated.** Docker-in-Docker normally requires a `privileged` container, which is root-equivalent on the host. The installer avoids that by installing [Sysbox](https://github.com/nestybox/sysbox) (`scripts/setup_sysbox.sh`) and running the runner with `runtime: sysbox-runc`. This installer supports Sysbox on Ubuntu 20.04/22.04/24.04 or Debian 11 (amd64/arm64) and, following n8n's sandbox service, requires a kernel newer than 5.19, Docker installed natively (Sysbox does not support the snap), `/var/lib` and Docker's data root on ext4 or btrfs, and a VM or bare-metal host (not an LXC or other system container). The installer also loads the `br_netfilter` module (the sandbox network policy needs it in both isolation modes) and, before installing Sysbox, adds `bip` and `default-address-pools` entries to `/etc/docker/daemon.json` that mirror Docker's current values: the Sysbox package needs them present to install without rewriting Docker's networking or restarting Docker, so running services are not interrupted. If a prerequisite is missing, or your Docker network setup is custom (`-b`/`--bridge`, `--bip`, `--fixed-cidr` or `--default-address-pool` flags; `bridge`, `fixed-cidr`, `fixed-cidr-v6` or `ipv6: true` in `daemon.json`; no `docker0` bridge), the installer asks whether to run the runner **privileged** instead; say No and the profile is dropped. The choice is recorded in `.env` as `N8N_SANDBOX_RUNNER_RUNTIME` / `N8N_SANDBOX_RUNNER_PRIVILEGED`, `make doctor` warns while the runner is privileged, and `make update` retries Sysbox. On a host you configured yourself, install the `sysbox-ce` package by hand ([release 0.7.1](https://github.com/nestybox/sysbox/releases/tag/v0.7.1); its installer registers the runtime, but refuses to run while containers exist unless `daemon.json` already has `bip` and `default-address-pools`, so do it with the stack stopped) and run `make update`.
+
+Notes:
+
+- **Agents preview**: set `N8N_ENABLED_MODULES=instance-ai,agents` in `.env` and `make restart`. Leave it empty otherwise; an unknown module name stops n8n from booting. The Agents knowledge base additionally needs a Daytona sandbox, which this stack does not provide.
+- **Versions**: the three sandbox images are released together and follow `:latest`; set `N8N_SANDBOX_VERSION` in `.env` to pin one release for all of them. The runner downloads the sandbox image (about 330 MB) on first use after each `make update` or `make restart`, so the first assistant request after that takes a little longer.
+- **Certificates** between `sandbox-api` and the runner are generated once into the `localai_n8n_sandbox_tls` volume and do not renew themselves. To regenerate: `docker compose -p localai rm -sf sandbox-certs sandbox-api sandbox-runner-1`, then `docker volume rm localai_n8n_sandbox_tls`, then `make restart`.
+- **Removing Sysbox**: `sudo apt-get purge sysbox-ce && sudo userdel sysbox`; the two `daemon.json` entries and `/etc/modules-load.d/n8n-sandbox.conf` (br_netfilter autoload) are harmless and can stay.
 
 ## Upgrading
 

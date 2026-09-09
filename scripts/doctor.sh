@@ -128,6 +128,37 @@ else
     count_warning "Docker Compose is not available"
 fi
 
+# n8n Assistant sandbox: the runner must run under the isolation .env promises
+if is_profile_active "n8n-sandbox"; then
+    SANDBOX_RUNTIME="${N8N_SANDBOX_RUNNER_RUNTIME:-runc}"
+    SANDBOX_PRIVILEGED="${N8N_SANDBOX_RUNNER_PRIVILEGED:-false}"
+    if [ "$SANDBOX_RUNTIME" = "sysbox-runc" ] && [ "$SANDBOX_PRIVILEGED" = "true" ]; then
+        count_error "N8N_SANDBOX_RUNNER_RUNTIME=sysbox-runc together with N8N_SANDBOX_RUNNER_PRIVILEGED=true - Sysbox rejects privileged containers. Run 'make update' to let the installer rewrite both values."
+    fi
+    if ! docker info &> /dev/null; then
+        count_warning "Docker is not accessible, so the n8n sandbox runner isolation could not be checked."
+    else
+        if [ "$SANDBOX_RUNTIME" = "sysbox-runc" ]; then
+            if ! docker info --format '{{json .Runtimes}}' 2>/dev/null | grep -q '"sysbox-runc"'; then
+                count_error "N8N_SANDBOX_RUNNER_RUNTIME=sysbox-runc but Docker has no sysbox-runc runtime - sandbox-runner-1 cannot start. Run 'sudo bash scripts/setup_sysbox.sh', then 'make restart'."
+            elif command -v systemctl &> /dev/null && ! systemctl is-active --quiet sysbox 2>/dev/null; then
+                count_error "The sysbox service is not running - sandbox-runner-1 cannot start (systemctl status sysbox)."
+            fi
+        fi
+        if ! docker inspect sandbox-runner-1 &> /dev/null; then
+            count_warning "The sandbox-runner-1 container does not exist, so its isolation could not be checked. Run 'make restart'."
+        else
+            RUNNER_STATE="$(docker inspect sandbox-runner-1 --format '{{.HostConfig.Runtime}} {{.HostConfig.Privileged}} {{.State.Status}}' 2>/dev/null)"
+            case "$RUNNER_STATE" in
+                "sysbox-runc false running") count_ok "n8n sandbox runner is running, isolated with sysbox-runc" ;;
+                *" true running") count_warning "n8n sandbox runner runs PRIVILEGED (root-equivalent on this host). Install Sysbox with 'sudo bash scripts/setup_sysbox.sh', then 'make update'." ;;
+                *" running") count_error "n8n sandbox runner is neither sysbox-isolated nor privileged ($RUNNER_STATE) - Docker-in-Docker cannot work. Run 'make update'." ;;
+                *) count_error "n8n sandbox runner is not running (${RUNNER_STATE##* }) - see 'docker logs sandbox-runner-1'." ;;
+            esac
+        fi
+    fi
+fi
+
 # Check disk space
 log_subheader "Disk Space"
 

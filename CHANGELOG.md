@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-09-09
+
+### Added
+- **n8n Assistant sandbox** - New optional `n8n-sandbox` profile that adds n8n's own code-execution sandbox (`sandbox-certs`, `sandbox-api`, `sandbox-runner-1` from n8n-sandbox-service) so the built-in AI Assistant works on self-hosted n8n (and the Agents preview, except its knowledge base, which needs Daytona); until now the Instance AI settings page showed `Code sandbox: Not set`. The installer wires `N8N_INSTANCE_AI_SANDBOX_ENABLED`, the sandbox URL and key into n8n, generates the three shared secrets, and points `N8N_INSTANCE_AI_SEARXNG_URL` at the bundled SearXNG while that profile is active; the model API key is added in the n8n UI (Settings → Instance AI). The Docker-in-Docker runner is isolated with Sysbox: `scripts/setup_sysbox.sh` installs `sysbox-ce` non-interactively without restarting Docker (it pre-seeds `bip`/`default-address-pools` in `daemon.json` with Docker's current values) and the runner gets `runtime: sysbox-runc`. When Sysbox cannot be installed the installer asks before falling back to a privileged runner, records the choice in `N8N_SANDBOX_RUNNER_RUNTIME` / `N8N_SANDBOX_RUNNER_PRIVILEGED`, and `make doctor` warns while the runner is privileged. `N8N_ENABLED_MODULES` is exposed (empty by default) for the Agents preview. (#114)
+
 ## [1.10.1] - 2026-09-02
 
 ### Fixed

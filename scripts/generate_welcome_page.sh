@@ -507,6 +507,30 @@ if is_profile_active "cloudflare-tunnel"; then
     }")
 fi
 
+# n8n Assistant sandbox (internal only)
+if is_profile_active "n8n-sandbox"; then
+    if [ "${N8N_SANDBOX_RUNNER_RUNTIME:-runc}" = "sysbox-runc" ] && [ "${N8N_SANDBOX_RUNNER_PRIVILEGED:-false}" = "true" ]; then
+        SANDBOX_RUNTIME_LABEL="misconfigured (sysbox-runc + privileged) - run 'make update'"
+    elif [ "${N8N_SANDBOX_RUNNER_RUNTIME:-runc}" = "sysbox-runc" ]; then
+        SANDBOX_RUNTIME_LABEL="sysbox-runc"
+    elif [ "${N8N_SANDBOX_RUNNER_PRIVILEGED:-false}" = "true" ]; then
+        SANDBOX_RUNTIME_LABEL="privileged (root-equivalent on the host)"
+    else
+        SANDBOX_RUNTIME_LABEL="not configured - run 'make update'"
+    fi
+    SERVICES_ARRAY+=("    \"n8n-sandbox\": {
+      \"hostname\": null,
+      \"credentials\": {
+        \"note\": \"In n8n open Settings -> Instance AI and add a model API key to enable the assistant\"
+      },
+      \"extra\": {
+        \"runtime\": \"$(json_escape "$SANDBOX_RUNTIME_LABEL")\",
+        \"internal_api\": \"http://sandbox-api:8080\",
+        \"docs\": \"https://docs.n8n.io/deploy/host-n8n/configure-n8n/set-up-n8n-assistant\"
+      }
+    }")
+fi
+
 # Gost Proxy (internal only)
 if is_profile_active "gost"; then
     SERVICES_ARRAY+=("    \"gost\": {

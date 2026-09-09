@@ -56,6 +56,7 @@ base_services_data=(
     "monitoring" "Monitoring Suite (Prometheus, Grafana, cAdvisor, Node-Exporter)"
     "n8n" "n8n, n8n-worker, n8n-import (Workflow Automation)"
     "n8n-mcp" "n8n-MCP (MCP server: n8n node docs + workflow tools for AI IDEs)"
+    "n8n-sandbox" "n8n Assistant sandbox (runs AI Assistant / Agents code; Docker-in-Docker, +4 GB RAM)"
     "neo4j" "Neo4j (Graph Database)"
     "nocodb" "NocoDB (Open Source Airtable Alternative - Spreadsheet Database)"
     "ollama" "Ollama (Local LLM Runner - select hardware in next step)"
@@ -148,6 +149,17 @@ if [ -n "$CHOICES" ]; then
             selected_profiles+=("$choice")
         fi
     done
+fi
+
+# The n8n Assistant sandbox only makes sense next to n8n itself
+if printf '%s\n' "${selected_profiles[@]}" | grep -qx "n8n-sandbox" && \
+   ! printf '%s\n' "${selected_profiles[@]}" | grep -qx "n8n"; then
+    tmp=()
+    for p in "${selected_profiles[@]}"; do
+        [ "$p" = "n8n-sandbox" ] || tmp+=("$p")
+    done
+    selected_profiles=("${tmp[@]}")
+    log_warning "The n8n Assistant sandbox requires n8n. n8n-sandbox has been removed from selection."
 fi
 
 # Enforce mutual exclusivity between Dify and Supabase (compact)
