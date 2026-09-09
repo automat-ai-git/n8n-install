@@ -172,6 +172,14 @@
             category: 'automation',
             docsUrl: 'https://github.com/czlonkowski/n8n-mcp'
         },
+        'n8n-sandbox': {
+            name: 'n8n Assistant Sandbox',
+            description: 'Code Sandbox for n8n AI Assistant',
+            icon: 'SB',
+            color: 'bg-[#EA4B71]',
+            category: 'automation',
+            docsUrl: 'https://docs.n8n.io/deploy/host-n8n/configure-n8n/set-up-n8n-assistant'
+        },
         'flowise': {
             name: 'Flowise',
             description: 'AI Agent Builder',
@@ -658,7 +666,8 @@
         internal_port: { label: 'Internal Port', isSecret: false },
         database: { label: 'Database', isSecret: false },
         proxy_url: { label: 'Proxy URL', isSecret: true },
-        upstream_proxy: { label: 'Upstream', isSecret: true }
+        upstream_proxy: { label: 'Upstream', isSecret: true },
+        runtime: { label: 'Runtime', isSecret: false }
     };
 
     /**
