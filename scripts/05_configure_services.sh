@@ -9,10 +9,14 @@
 #   - OpenAI API Key (optional, used by Supabase AI and Crawl4AI)
 #   - n8n workflow import option (~300 ready-made workflows)
 #   - Number of n8n workers to run
+#   - Privileged fallback for the n8n Assistant sandbox runner when Sysbox
+#     cannot be installed (n8n-sandbox profile)
 #   - Cloudflare Tunnel token (if cloudflare-tunnel profile is active)
 #
 # Also handles:
 #   - Generates n8n worker-runner pairs configuration
+#   - Installs Sysbox (scripts/setup_sysbox.sh) and wires the n8n Assistant
+#     sandbox and SearXNG web search into n8n
 #   - Resolves service conflicts (e.g., removes Dify if Supabase is selected)
 #
 # Usage: bash scripts/05_configure_services.sh
@@ -129,6 +133,87 @@ fi
 # Generate the n8n worker-runner pairs and the Prometheus targets. Runs even when
 # n8n is not selected: the generator then removes the stale targets file
 bash "$SCRIPT_DIR/generate_n8n_workers.sh"
+
+# ----------------------------------------------------------------
+# n8n Assistant sandbox (n8n-sandbox profile)
+# The Docker-in-Docker runner is isolated with sysbox-runc when Sysbox can be
+# installed on this host; otherwise the user may accept a privileged runner
+# (root-equivalent on the host) or the profile is dropped.
+# ----------------------------------------------------------------
+if is_profile_active "n8n-sandbox"; then
+    log_subheader "n8n Assistant Sandbox"
+
+    if [ "$EUID" -ne 0 ]; then
+        # Sysbox and the kernel module need root. Stop here rather than start a
+        # runner that cannot work; install.sh and apply_update.sh abort on this.
+        log_error "Not running as root: cannot install Sysbox or load br_netfilter for the n8n sandbox. Run 'make update' (it uses sudo) or 'sudo bash scripts/05_configure_services.sh'."
+        exit 1
+    else
+        # The sandbox egress policy relies on bridge netfilter in both isolation modes
+        if ! lsmod | grep -q '^br_netfilter'; then
+            modprobe br_netfilter || log_warning "Could not load the br_netfilter kernel module; the sandbox network policy will not apply."
+        fi
+        if [ ! -f /etc/modules-load.d/n8n-sandbox.conf ]; then
+            install -d /etc/modules-load.d && echo "br_netfilter" > /etc/modules-load.d/n8n-sandbox.conf \
+                || log_warning "Could not persist br_netfilter in /etc/modules-load.d; it will not load on reboot."
+        fi
+
+        # setup_sysbox.sh re-tests an installed Sysbox and exits 0 quickly when it
+        # works, so it runs every time. Its output is shown live and kept, because
+        # whiptail clears the screen and the failure reason has to be in the dialog
+        # itself. tee appends: on Linux /dev/stderr re-opens the target, and without
+        # -a a stderr redirected to a log file would be truncated.
+        if SYSBOX_OUTPUT="$(bash "$SCRIPT_DIR/setup_sysbox.sh" 2>&1 | tee -a /dev/stderr; exit "${PIPESTATUS[0]}")"; then
+            write_env_var "N8N_SANDBOX_RUNNER_RUNTIME" "sysbox-runc"
+            write_env_var "N8N_SANDBOX_RUNNER_PRIVILEGED" "false"
+        else
+            SYSBOX_REASON="$(printf '%s\n' "$SYSBOX_OUTPUT" | sed 's/\x1b\[[0-9;]*m//g' | grep -o 'Sysbox: .*' | tail -n1 || true)"
+            SYSBOX_REASON="${SYSBOX_REASON:-Sysbox could not be installed.}"
+            require_whiptail
+            # wt_yesno is capped at 12 rows, so the reason is cut to fit the box.
+            if wt_yesno "n8n Assistant Sandbox" \
+                "${SYSBOX_REASON:0:200}\n\nRun the sandbox runner PRIVILEGED (root-equivalent on this host)? No = remove the n8n-sandbox profile." \
+                "no"; then
+                write_env_var "N8N_SANDBOX_RUNNER_RUNTIME" "runc"
+                write_env_var "N8N_SANDBOX_RUNNER_PRIVILEGED" "true"
+                log_warning "$SYSBOX_REASON"
+                log_warning "The n8n sandbox runner will run privileged. Re-run 'make update' after fixing the Sysbox prerequisites to switch to sysbox-runc."
+            else
+                IFS=',' read -r -a profiles_array <<< "${COMPOSE_PROFILES_VALUE// /}"
+                new_profiles=()
+                for p in "${profiles_array[@]}"; do
+                    [[ "$p" == "n8n-sandbox" ]] || new_profiles+=("$p")
+                done
+                COMPOSE_PROFILES_VALUE=$(IFS=','; echo "${new_profiles[*]}")
+                COMPOSE_PROFILES="$COMPOSE_PROFILES_VALUE"
+                update_compose_profiles "$COMPOSE_PROFILES_VALUE"
+                write_env_var "N8N_SANDBOX_RUNNER_RUNTIME" "runc"
+                write_env_var "N8N_SANDBOX_RUNNER_PRIVILEGED" "false"
+                log_warning "$SYSBOX_REASON"
+                log_warning "Removed 'n8n-sandbox' from COMPOSE_PROFILES: the sandbox runner would have to run privileged."
+            fi
+        fi
+    fi
+fi
+
+if is_profile_active "n8n-sandbox"; then
+    write_env_var "N8N_INSTANCE_AI_SANDBOX_ENABLED" "true"
+else
+    write_env_var "N8N_INSTANCE_AI_SANDBOX_ENABLED" "false"
+fi
+
+# Web search for the n8n Assistant: point n8n at the bundled SearXNG while that
+# profile is active, and clear the value again when it is not. A custom URL is
+# left alone in both directions.
+SEARXNG_INTERNAL_URL="http://searxng:8080"
+CURRENT_SEARXNG_URL="$(read_env_var N8N_INSTANCE_AI_SEARXNG_URL)"
+if is_profile_active "searxng"; then
+    if [ -z "$CURRENT_SEARXNG_URL" ]; then
+        write_env_var "N8N_INSTANCE_AI_SEARXNG_URL" "$SEARXNG_INTERNAL_URL"
+    fi
+elif [ "$CURRENT_SEARXNG_URL" = "$SEARXNG_INTERNAL_URL" ]; then
+    write_env_var "N8N_INSTANCE_AI_SEARXNG_URL" ""
+fi
 
 # ----------------------------------------------------------------
 # Prompt for number of Ollama instances (multi-GPU hosts)

@@ -96,6 +96,19 @@ if is_profile_active "n8n-mcp"; then
     echo -e "       Connect your IDE (token is on the Welcome Page):"
     echo -e "       ${CYAN}npx -y mcp-remote https://${N8N_MCP_HOSTNAME:-<N8N_MCP_HOSTNAME>}/mcp --header \"Authorization: Bearer <N8N_MCP_AUTH_TOKEN>\"${NC}"
 fi
+if is_profile_active "n8n-sandbox"; then
+    echo -e "     ${GREEN}*${NC} ${WHITE}n8n Assistant${NC}: the code sandbox is configured. In n8n open Settings > Instance AI"
+    echo -e "       and add a model API key to switch the assistant on"
+    if [ "${N8N_SANDBOX_RUNNER_RUNTIME:-runc}" = "sysbox-runc" ] && [ "${N8N_SANDBOX_RUNNER_PRIVILEGED:-false}" = "true" ]; then
+        echo -e "       ${RED}Sandbox runner is misconfigured (sysbox-runc together with privileged) and cannot start - run 'make update'${NC}"
+    elif [ "${N8N_SANDBOX_RUNNER_RUNTIME:-runc}" = "sysbox-runc" ]; then
+        echo -e "       Sandbox runner isolated with sysbox-runc"
+    elif [ "${N8N_SANDBOX_RUNNER_PRIVILEGED:-false}" = "true" ]; then
+        echo -e "       ${YELLOW}Sandbox runner runs PRIVILEGED (Sysbox could not be installed) - root-equivalent on this host${NC}"
+    else
+        echo -e "       ${RED}Sandbox runner is neither sysbox-isolated nor privileged and cannot start - run 'make update'${NC}"
+    fi
+fi
 if is_profile_active "portainer"; then
     echo -e "     ${GREEN}*${NC} ${WHITE}Portainer${NC}: Create admin account on first login"
 fi

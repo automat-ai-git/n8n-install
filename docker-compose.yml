@@ -16,6 +16,8 @@ volumes:
   libretranslate_models:
   lightrag_data:
   lightrag_inputs:
+  n8n_sandbox_api_data:
+  n8n_sandbox_tls:
   n8n_storage:
   nocodb_data:
   ollama_storage:
@@ -77,8 +79,15 @@ x-n8n: &service-n8n
     N8N_COMMUNITY_PACKAGES_ALLOW_TOOL_USAGE: true
     N8N_DIAGNOSTICS_ENABLED: false
     N8N_EMAIL_MODE: "${N8N_EMAIL_MODE:-smtp}"
+    # Empty = n8n defaults (instance-ai is on by default). Set "instance-ai,agents"
+    # for the Agents preview. An unknown module name stops n8n from booting.
+    N8N_ENABLED_MODULES: "${N8N_ENABLED_MODULES:-}"
     N8N_ENCRYPTION_KEY: "${N8N_ENCRYPTION_KEY}"
     N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: true
+    # n8n Assistant sandbox (n8n-sandbox profile). ENABLED is written by
+    # 05_configure_services.sh; the URL and key point at the sandbox-api service.
+    N8N_INSTANCE_AI_SANDBOX_ENABLED: "${N8N_INSTANCE_AI_SANDBOX_ENABLED:-false}"
+    N8N_INSTANCE_AI_SEARXNG_URL: "${N8N_INSTANCE_AI_SEARXNG_URL:-}"
     N8N_LOG_LEVEL: "${N8N_LOG_LEVEL:-info}"
     N8N_LOG_OUTPUT: "${N8N_LOG_OUTPUT:-console}"
     N8N_METRICS: true
@@ -95,6 +104,8 @@ x-n8n: &service-n8n
     N8N_RUNNERS_ENABLED: true
     N8N_RUNNERS_MODE: external
     N8N_RUNNERS_TASK_REQUEST_TIMEOUT: "${N8N_RUNNERS_TASK_REQUEST_TIMEOUT:-300}"
+    N8N_SANDBOX_SERVICE_API_KEY: "${N8N_SANDBOX_API_KEY:-}"
+    N8N_SANDBOX_SERVICE_URL: "${N8N_SANDBOX_SERVICE_URL:-http://sandbox-api:8080}"
     OFFLOAD_MANUAL_EXECUTIONS_TO_WORKERS: "${OFFLOAD_MANUAL_EXECUTIONS_TO_WORKERS:-true}"
     N8N_SMTP_HOST: "${N8N_SMTP_HOST:-}"
     N8N_SMTP_OAUTH_PRIVATE_KEY: "${N8N_SMTP_OAUTH_PRIVATE_KEY:-}"
@@ -337,6 +348,110 @@ services:
       timeout: 10s
       retries: 5
       start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # n8n Assistant sandbox (profile "n8n-sandbox") - upstream n8n-sandbox-service.
+  # Runs the code the AI Assistant / Agents generate. Three services, no ports,
+  # no Caddy block: n8n reaches sandbox-api by service name. The mTLS certs are
+  # issued for the names "sandbox-api" and "sandbox-runner-1" - keep them.
+  # The three images are released together; N8N_SANDBOX_VERSION selects one tag for all.
+  # ---------------------------------------------------------------------------
+  # One-shot: generates the CA and leaf certs into the shared volume, then exits.
+  # Skips generation when the certs already exist, so it is safe on every start
+  # (set SANDBOX_TLS_REGEN=1 on this service to force new certs).
+  sandbox-certs:
+    image: "ghcr.io/n8n-io/n8n-sandbox-service-api:${N8N_SANDBOX_VERSION:-latest}"
+    container_name: sandbox-certs
+    profiles: ["n8n-sandbox"]
+    restart: "no"
+    logging: *default-logging
+    user: "0:0"
+    entrypoint: ["sh", "-c"]
+    command:
+      - >
+        bootstrap-mtls.sh --out-dir /tls --api-san sandbox-api
+        --control-san-prefix sandbox-runner --world-readable &&
+        chown -R sandbox-api:sandbox-api /tls/api && chmod -R a+rX /tls
+    environment:
+      NUM_RUNNERS: "1"
+    volumes:
+      - n8n_sandbox_tls:/tls
+
+  sandbox-api:
+    image: "ghcr.io/n8n-io/n8n-sandbox-service-api:${N8N_SANDBOX_VERSION:-latest}"
+    container_name: sandbox-api
+    profiles: ["n8n-sandbox"]
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      # n8n authenticates with N8N_SANDBOX_SERVICE_API_KEY, which must be one of these.
+      SANDBOX_API_KEYS: "${N8N_SANDBOX_API_KEY}"
+      SANDBOX_API_RUNNER_REGISTRATION_TOKEN: "${N8N_SANDBOX_RUNNER_REGISTRATION_TOKEN}"
+      SANDBOX_API_RUNNER_API_KEY: "${N8N_SANDBOX_RUNNER_API_KEY}"
+      SANDBOX_API_GRPC_TLS_CERT_FILE: /tls/api/grpc-server.crt
+      SANDBOX_API_GRPC_TLS_KEY_FILE: /tls/api/grpc-server.key
+      SANDBOX_API_GRPC_TLS_CLIENT_CA_FILE: /tls/api/ca.crt
+      SANDBOX_API_RUNNER_CONTROL_GRPC_TLS_CA_FILE: /tls/api/ca.crt
+      SANDBOX_API_RUNNER_CONTROL_GRPC_TLS_CERT_FILE: /tls/api/control-grpc-api-client.crt
+      SANDBOX_API_RUNNER_CONTROL_GRPC_TLS_KEY_FILE: /tls/api/control-grpc-api-client.key
+      SANDBOX_API_RUNNER_CONTROL_GRPC_TLS_SERVER_NAME: sandbox-runner-1
+    volumes:
+      - n8n_sandbox_tls:/tls:ro
+      - n8n_sandbox_api_data:/var/lib/n8n-sandbox-api
+    healthcheck:
+      test: ["CMD-SHELL", "http_proxy= https_proxy= HTTP_PROXY= HTTPS_PROXY= wget -qO- http://localhost:8080/healthz || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      sandbox-certs:
+        condition: service_completed_successfully
+
+  # Docker-in-Docker host for the sandboxes. Isolated with sysbox-runc when
+  # 05_configure_services.sh could install it (N8N_SANDBOX_RUNNER_RUNTIME); with
+  # the privileged fallback accepted there it runs privileged, which is
+  # root-equivalent on the host. The shipped runc + false pair cannot run
+  # Docker-in-Docker at all ('make doctor' flags it). Never publish its ports.
+  # Deliberately no volume for the inner Docker: the sandbox image is
+  # pulled on first use after each recreate, so it always matches the runner's tag
+  # instead of a cached copy going stale behind it.
+  sandbox-runner-1:
+    image: "ghcr.io/n8n-io/n8n-sandbox-service-runner-dind:${N8N_SANDBOX_VERSION:-latest}"
+    container_name: sandbox-runner-1
+    profiles: ["n8n-sandbox"]
+    restart: unless-stopped
+    logging: *default-logging
+    runtime: "${N8N_SANDBOX_RUNNER_RUNTIME:-runc}"
+    privileged: "${N8N_SANDBOX_RUNNER_PRIVILEGED:-false}"
+    environment:
+      SANDBOX_RUNNER_REGISTRATION_TOKEN: "${N8N_SANDBOX_RUNNER_REGISTRATION_TOKEN}"
+      SANDBOX_RUNNER_API_KEYS: "${N8N_SANDBOX_RUNNER_API_KEY}"
+      SANDBOX_RUNNER_API_GRPC_ADDR: sandbox-api:9090
+      SANDBOX_RUNNER_HTTP_BASE_URL: https://sandbox-runner-1:8080
+      SANDBOX_RUNNER_CONTROL_GRPC_LISTEN_ADDR: ":9091"
+      SANDBOX_RUNNER_CONTROL_GRPC_ADVERTISE_ADDR: sandbox-runner-1:9091
+      SANDBOX_RUNNER_ID: runner-1
+      SANDBOX_RUNNER_DOCKER_SANDBOX_IMAGE: "ghcr.io/n8n-io/n8n-sandbox-service-sandbox:${N8N_SANDBOX_VERSION:-latest}"
+      SANDBOX_RUNNER_REGISTRATION_GRPC_CA_FILE: /tls/runner/ca.crt
+      SANDBOX_RUNNER_REGISTRATION_GRPC_CERT_FILE: /tls/runner/grpc-client.crt
+      SANDBOX_RUNNER_REGISTRATION_GRPC_KEY_FILE: /tls/runner/grpc-client.key
+      SANDBOX_RUNNER_REGISTRATION_GRPC_SERVER_NAME: sandbox-api
+      SANDBOX_RUNNER_CONTROL_GRPC_TLS_CERT_FILE: /tls/runner/control-grpc-server.crt
+      SANDBOX_RUNNER_CONTROL_GRPC_TLS_KEY_FILE: /tls/runner/control-grpc-server.key
+      SANDBOX_RUNNER_CONTROL_GRPC_TLS_CLIENT_CA_FILE: /tls/runner/ca.crt
+    volumes:
+      - n8n_sandbox_tls:/tls:ro
+    # The runner listener is TLS-only, hence https and --no-check-certificate.
+    healthcheck:
+      test: ["CMD-SHELL", "http_proxy= https_proxy= HTTP_PROXY= HTTPS_PROXY= wget -q -O /dev/null --no-check-certificate https://localhost:8080/readyz || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 20s
+    depends_on:
+      sandbox-api:
+        condition: service_healthy
 
   qdrant:
     image: qdrant/qdrant

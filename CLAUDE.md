@@ -43,6 +43,7 @@ This is **Selfhost AI** (repository `selfhost-ai`, formerly `n8n-install`), a Do
 - `scripts/import_workflows.sh`: Imports workflows from `n8n/backup/workflows/` into n8n (used by `make import`)
 - `scripts/restart.sh`: Restarts services with proper compose file handling (used by `make restart`)
 - `scripts/setup_custom_tls.sh`: Configures custom TLS certificates (used by `make setup-tls`); supports `--remove` to revert to Let's Encrypt
+- `scripts/setup_sysbox.sh`: Installs Sysbox (`sysbox-runc`) for the n8n Assistant sandbox runner; called by `05_configure_services.sh` when the `n8n-sandbox` profile is active
 - `start_services.py`: Python orchestrator for service startup order, builds Docker images, handles external services (Supabase/Dify cloning, env preparation, startup), generates SearXNG secret key, stops existing containers. Uses `python-dotenv` (`dotenv_values`).
 
 **Project Name**: All docker-compose commands use `-p localai` (defined in Makefile as `PROJECT_NAME := localai`).
@@ -184,6 +185,16 @@ This project uses [Semantic Versioning](https://semver.org/). When updating `CHA
 - No published ports and no Caddy block for extra instances - they are internal (`ollama2:11434`); `caddy-addon/site-*.conf` is the documented extension point
 - The generator is invoked unconditionally from `05_configure_services.sh`, which covers install and `make update`, and self-heals a stale file after a hardware-profile switch
 
+### n8n Assistant sandbox (`n8n-sandbox` profile)
+
+- Upstream n8n-sandbox-service as three services in `docker-compose.yml`: one-shot `sandbox-certs` (mTLS bootstrap into the `n8n_sandbox_tls` volume, skips when certs exist), `sandbox-api` (HTTP 8080 + gRPC 9090) and the Docker-in-Docker `sandbox-runner-1`. No ports, no Caddy block; n8n reaches `sandbox-api` by service name. **The cert SANs are the service names `sandbox-api` / `sandbox-runner-1` - do not rename them.** Exactly one runner by design.
+- All three images share `N8N_SANDBOX_VERSION` (default `latest`, like most images here). The runner pulls the sandbox image into its inner Docker on first use, and deliberately has **no volume** for that inner Docker: a persisted cache would keep an old sandbox image while `make update` moves api and runner forward. The cost is one ~330 MB pull after every recreate.
+- Three secrets, each referenced on both sides from one `.env` var: `N8N_SANDBOX_API_KEY` (n8n's `N8N_SANDBOX_SERVICE_API_KEY` = api's `SANDBOX_API_KEYS`), `N8N_SANDBOX_RUNNER_REGISTRATION_TOKEN`, `N8N_SANDBOX_RUNNER_API_KEY`.
+- The n8n env anchor carries `N8N_INSTANCE_AI_SANDBOX_ENABLED` (written `true`/`false` by `05_configure_services.sh` from the profile), the sandbox URL/key, `N8N_INSTANCE_AI_SEARXNG_URL` (set to `http://searxng:8080` while `searxng` is active, cleared otherwise; a custom value is left alone) and `N8N_ENABLED_MODULES` (**empty by default** - `instance-ai` is default-on in n8n, and an unknown module name stops n8n from booting, so never default it to a name). There is deliberately no `depends_on` from `n8n` to `sandbox-api`: a dependency on a profile-gated service breaks compose when the profile is off. The model/API key is configured in the n8n UI, not in compose.
+- Runner isolation: `runtime: "${N8N_SANDBOX_RUNNER_RUNTIME:-runc}"` + `privileged: "${N8N_SANDBOX_RUNNER_PRIVILEGED:-false}"` (compose casts the interpolated string to boolean). `05_configure_services.sh` runs `setup_sysbox.sh`; on success it writes `sysbox-runc`/`false`, otherwise it asks (`wt_yesno`, default No) before writing `runc`/`true`, and drops the profile on No. It also loads `br_netfilter` in both modes (the sandbox egress policy needs it) and persists it in `/etc/modules-load.d/n8n-sandbox.conf`. Without root, 05 exits 1 for this profile instead of configuring a runner that cannot start.
+- `setup_sysbox.sh` must stay non-interactive and must not restart Docker: the `sysbox-ce` package refuses to install while any container exists unless `/etc/docker/daemon.json` already has pretty-printed `bip` and `default-address-pools` keys, so the script pre-seeds them with Docker's current values via `jq --indent 4` and then the package only registers the runtime and SIGHUPs dockerd. Hosts with a custom Docker network setup (`-b`/`--bridge`/`--bip`/`--default-address-pool`/`--fixed-cidr` flags; `bridge`, `fixed-cidr`, `fixed-cidr-v6` or `ipv6: true` in daemon.json; no `docker0`) are rejected instead of guessed at. An already installed Sysbox is re-tested with a container on every run, never trusted from `dpkg` state alone. `jq` is not installed by 01/02 - only this script may rely on it, after its own apt step.
+- `make doctor` errors when `.env` says `sysbox-runc` but Docker lacks the runtime, and warns while the runner is privileged.
+
 ### Monitoring (Prometheus + Grafana)
 
 - n8n metrics are enabled in the `x-n8n` anchor: `N8N_METRICS` plus `N8N_METRICS_INCLUDE_MESSAGE_EVENT_BUS_METRICS` / `_WORKFLOW_ID_LABEL` / `_WORKFLOW_NAME_LABEL` / `_WORKFLOW_INFO`. They expose `n8n_workflow_{started,success,failed,cancelled}_total{workflow_id,workflow_name}` and the `n8n_workflow_info` / `n8n_active_workflow_info` id-to-name gauges (leader main only). The alerts and recording rules also use `n8n_workflow_execution_duration_seconds{status,mode,workflow_id}`, which is on by default (`N8N_METRICS_INCLUDE_WORKFLOW_EXECUTION_DURATION`); turning it off silently disables them. Setting `N8N_METRICS_PREFIX` would break every panel and alert
@@ -262,6 +273,7 @@ Common profiles:
 - `dify`: Dify AI platform (external compose, cloned at runtime; mutually exclusive with `supabase`)
 - `gost`: HTTP/HTTPS proxy for routing AI service outbound traffic
 - `python-runner`: Internal Python execution environment (no external access)
+- `n8n-sandbox`: n8n Assistant code-execution sandbox (requires `n8n`; internal only, see below)
 - `searxng`, `letta`, `lightrag`, `libretranslate`, `crawl4ai`, `docling`, `waha`, `comfyui`, `paddleocr`, `ragapp`, `gotenberg`, `postiz`, `n8n-mcp`: Additional optional services
 
 ## Architecture Patterns
@@ -412,6 +424,7 @@ bash -n scripts/install.sh
 bash -n scripts/restart.sh
 bash -n scripts/doctor.sh
 bash -n scripts/setup_custom_tls.sh
+bash -n scripts/setup_sysbox.sh
 bash -n scripts/docker_cleanup.sh
 ```
 
