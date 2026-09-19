@@ -180,6 +180,7 @@ This project uses [Semantic Versioning](https://semver.org/). When updating `CHA
 - **The templates deliberately carry no `deploy:` block.** Compose *appends* `deploy.resources.reservations.devices` across `extends`, so a count-based reservation on the template would leak an extra, arbitrary GPU into every instance that pins specific device IDs. Do not add one.
 - Instance 1 is the stock `ollama` container and is never modified; count 1 generates nothing and **removes** a stale file, which otherwise resurrects the old instance set after a downscale
 - Per-instance tuning uses `OLLAMA<N>_*` variables emitted as nested defaults (`${OLLAMA2_KEEP_ALIVE:-${OLLAMA_KEEP_ALIVE:-}}`), so users tune `.env` and restart without regenerating
+- Anything else (llama.cpp `LLAMA_ARG_*`, ROCm vars) comes from optional, gitignored env files: `ollama.env` on the `x-ollama` anchor (inherited by every instance via `extends`) and `ollama<N>.env` emitted per instance, both `required: false`. **Never map such variables through `environment:` with `${VAR:-}`** - an empty `LLAMA_ARG_FIT_TARGET` makes llama-server exit at startup (`std::stoull("")`), and `environment:` keys override the files
 - NVIDIA pins via `deploy.…device_ids`; AMD pins via `HIP_VISIBLE_DEVICES`/`ROCR_VISIBLE_DEVICES` (ROCm passes all devices through)
 - All instances share the `ollama_storage` volume, so models are downloaded once; only instance 1 has a model-pull job
 - No published ports and no Caddy block for extra instances - they are internal (`ollama2:11434`); `caddy-addon/site-*.conf` is the documented extension point
@@ -194,6 +195,14 @@ This project uses [Semantic Versioning](https://semver.org/). When updating `CHA
 - Runner isolation: `runtime: "${N8N_SANDBOX_RUNNER_RUNTIME:-runc}"` + `privileged: "${N8N_SANDBOX_RUNNER_PRIVILEGED:-false}"` (compose casts the interpolated string to boolean). `05_configure_services.sh` runs `setup_sysbox.sh`; on success it writes `sysbox-runc`/`false`, otherwise it asks (`wt_yesno`, default No) before writing `runc`/`true`, and drops the profile on No. It also loads `br_netfilter` in both modes (the sandbox egress policy needs it) and persists it in `/etc/modules-load.d/n8n-sandbox.conf`. Without root, 05 exits 1 for this profile instead of configuring a runner that cannot start.
 - `setup_sysbox.sh` must stay non-interactive and must not restart Docker: the `sysbox-ce` package refuses to install while any container exists unless `/etc/docker/daemon.json` already has pretty-printed `bip` and `default-address-pools` keys, so the script pre-seeds them with Docker's current values via `jq --indent 4` and then the package only registers the runtime and SIGHUPs dockerd. Hosts with a custom Docker network setup (`-b`/`--bridge`/`--bip`/`--default-address-pool`/`--fixed-cidr` flags; `bridge`, `fixed-cidr`, `fixed-cidr-v6` or `ipv6: true` in daemon.json; no `docker0`) are rejected instead of guessed at. An already installed Sysbox is re-tested with a container on every run, never trusted from `dpkg` state alone. `jq` is not installed by 01/02 - only this script may rely on it, after its own apt step.
 - `make doctor` errors when `.env` says `sysbox-runc` but Docker lacks the runtime, and warns while the runner is privileged.
+
+### Open Terminal (`open-terminal` profile)
+
+- Single service `open-terminal` (`ghcr.io/open-webui/open-terminal`, tag from `OPEN_TERMINAL_VERSION`, default `latest`; only the full image - `latest` or a release tag like `0.12.5` - supports multi-user and runtime installs, the `*-slim`/`*-alpine`/`openshift` variants do not). No ports, no Caddy block; Open WebUI reaches `http://open-terminal:8000`. The wizard drops the profile when `open-webui` is not selected, same pattern as `n8n-sandbox` / `n8n`.
+- **The connection is configured only in the Open WebUI Admin UI** (Admin Settings → Integrations → Open Terminal, URL + `OPEN_TERMINAL_API_KEY`). Do not pre-seed it via `TERMINAL_SERVER_CONNECTIONS`: Open WebUI seeds that key into its DB only when the key is missing, i.e. on a brand-new database, and a connection without `config.access_grants` is admin-only anyway. Open WebUI proxies every request server-side and sends `X-User-Id`, which multi-user mode maps to a Linux account under `/home` - the volume must be `/home`, not `/home/user`.
+- **Never add `OPEN_TERMINAL_ALLOWED_DOMAINS` to the compose file.** The entrypoint distinguishes unset (full egress) from set-but-empty (drop all outbound) and runs `sudo iptables` under `set -e`, which needs `NET_ADMIN`; an interpolated `${VAR:-}` would crash the container. Egress filtering is a `docker-compose.override.yml` job together with `cap_add: [NET_ADMIN]`.
+- Never mount `docker.sock`: the entrypoint auto-joins the socket's group and the agent's shell would control the host daemon. The server process runs as `user` with passwordless sudo, so no `cap_drop` (apt, useradd and sudo need CHOWN/SETUID/SETGID/DAC_OVERRIDE). Provisioned per-user accounts are plain `useradd` users **without sudo**; only `OPEN_TERMINAL_MULTI_USER=false` gives the chat the sudo-capable shell, and only then are the startup package lists optional. The boundary is the network and the Open WebUI access grants. Healthcheck uses `curl` against the unauthenticated `/docs`.
+- `05_configure_services.sh` refuses a `slim`/`alpine`/`openshift` variant tag (bare or `-suffixed`) while `OPEN_TERMINAL_MULTI_USER=true`: those entrypoints ignore the multi-user and package variables, so every user would silently share one shell.
 
 ### Monitoring (Prometheus + Grafana)
 
@@ -254,6 +263,7 @@ Key functions:
 - `get_real_user` / `get_real_user_home` - Get actual user even under sudo
 - `backup_preserved_dirs` / `restore_preserved_dirs` - Directory preservation for git updates
 - `cleanup_legacy_n8n_workers` - Remove old n8n worker containers from previous naming convention
+- `cleanup_legacy_comfyui` - Remove the pre-1.13 `comfyui` container (service renamed to `comfyui-*`, container name kept) so `up` does not hit a name conflict
 - `get_n8n_workers_compose` / `get_supabase_compose` / `get_dify_compose` - Get compose file path if profile active AND file exists
 - `get_ollama_instances_compose` / `get_open_webui_postgres_compose` - Conditional compose overrides (multi-Ollama, Open WebUI on Postgres)
 - `harden_supabase_gateway_bind` - Keep the Supabase API gateway bound to loopback (issue #108)
@@ -269,13 +279,15 @@ Common profiles:
 - `langfuse`: Langfuse observability (includes ClickHouse, MinIO, worker, web)
 - `cpu`, `gpu-nvidia`, `gpu-amd`: Ollama hardware profiles (mutually exclusive)
 - `invokeai-nvidia`, `invokeai-amd`, `invokeai-cpu`: InvokeAI hardware profiles (mutually exclusive)
+- `comfyui-nvidia`, `comfyui-amd`, `comfyui-cpu`: ComfyUI hardware profiles (mutually exclusive; the pre-1.13 `comfyui` profile is migrated by the wizard). No `CLI_ARGS` in compose - the images ship the right default and the volume must be `/root`
 - `cloudflare-tunnel`: Cloudflare Tunnel for zero-trust access (see `cloudflare-instructions.md`)
 - `supabase`: Supabase BaaS (external compose, cloned at runtime; mutually exclusive with `dify`)
 - `dify`: Dify AI platform (external compose, cloned at runtime; mutually exclusive with `supabase`)
 - `gost`: HTTP/HTTPS proxy for routing AI service outbound traffic
 - `python-runner`: Internal Python execution environment (no external access)
 - `n8n-sandbox`: n8n Assistant code-execution sandbox (requires `n8n`; internal only, see below)
-- `searxng`, `letta`, `lightrag`, `libretranslate`, `crawl4ai`, `docling`, `waha`, `comfyui`, `paddleocr`, `ragapp`, `gotenberg`, `postiz`, `n8n-mcp`: Additional optional services
+- `open-terminal`: Open Terminal execution sandbox for Open WebUI agents (requires `open-webui`; internal only, see below)
+- `searxng`, `letta`, `lightrag`, `libretranslate`, `crawl4ai`, `docling`, `waha`, `paddleocr`, `ragapp`, `gotenberg`, `postiz`, `n8n-mcp`: Additional optional services
 
 ## Architecture Patterns
 

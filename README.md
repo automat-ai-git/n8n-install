@@ -64,7 +64,7 @@ The installer also makes the following powerful open-source tools **available fo
 
 ✅ [**n8n Assistant sandbox**](https://docs.n8n.io/deploy/host-n8n/configure-n8n/set-up-n8n-assistant) - Code-execution sandbox for n8n's built-in AI Assistant and the Agents preview (n8n's own sandbox service, Docker-in-Docker isolated with Sysbox; internal only, see [below](#n8n-assistant-sandbox-ai-assistant--agents)).
 
-✅ [**ComfyUI**](https://github.com/comfyanonymous/ComfyUI) - A powerful, node-based UI for Stable Diffusion workflows. Build and run image-generation pipelines visually, with support for custom nodes and extensions.
+✅ [**ComfyUI**](https://github.com/comfyanonymous/ComfyUI) - A powerful, node-based UI for Stable Diffusion workflows. Build and run image-generation pipelines visually, with support for custom nodes and extensions. Runs on NVIDIA, AMD or CPU (chosen in the wizard).
 
 ✅ [**Crawl4ai**](https://github.com/unclecode/crawl4ai) - A flexible web crawler designed for AI, enabling you to extract data from websites for your projects.
 
@@ -97,6 +97,8 @@ The installer also makes the following powerful open-source tools **available fo
 ✅ [**Ollama**](https://ollama.com/) - Run Llama 3, Mistral, Gemma, and other large language models locally. Optionally expose its API externally through Caddy under `OLLAMA_HOSTNAME`, protected by a generated Bearer token. On multi-GPU hosts you can run several instances (`OLLAMA_INSTANCE_COUNT`) to dedicate a GPU per model.
 
 ✅ [**Open WebUI**](https://openwebui.com/) - A user-friendly, ChatGPT-like interface to interact privately with your AI models and n8n agents.
+
+✅ [**Open Terminal**](https://docs.openwebui.com/features/open-terminal/) - Execution sandbox for Open WebUI agents: a real Linux shell with a filesystem, package installs, local services and Jupyter, a separate Linux account per user (internal only, see [below](#open-terminal-execution-sandbox-for-open-webui-agents)).
 
 ✅ [**PaddleOCR**](https://www.paddleocr.ai/latest/en/index.html) - A CPU-ready OCR API powered by PaddleX Basic Serving. 
 
@@ -189,9 +191,9 @@ After successful installation, your services are up and running! Here's how to g
     The installation script provided a summary report with all access URLs and credentials. Please refer to that report. The main services will be available at the following addresses (replace `yourdomain.com` with your actual domain):
 
     - **n8n:** `n8n.yourdomain.com` (Log in with the email address you provided during installation and the initial password from the summary report. You may be prompted to change this password on first login.)
-    - **n8n-MCP:** `n8n-mcp.yourdomain.com` (MCP endpoint at `/mcp`. Every request must send `Authorization: Bearer <N8N_MCP_AUTH_TOKEN>` - the token is on the Welcome Page - so a browser visit returns 401 by design. Connect with `npx -y mcp-remote https://n8n-mcp.yourdomain.com/mcp --header "Authorization: Bearer <token>"`, or keep the token out of your shell history and process list with `--header-file <path>` pointing at a file containing `Authorization: Bearer <token>`. Starts in documentation-only mode; to also manage workflows, create an API key in n8n under Settings -> n8n API, set `N8N_API_KEY` in `.env` and run `make restart`. Note that outside n8n Enterprise an API key has full account access.)
+    - **n8n-MCP:** `n8n-mcp.yourdomain.com` (MCP endpoint at `/mcp`. Every request must send `Authorization: Bearer <N8N_MCP_AUTH_TOKEN>` - the token is on the Welcome Page - so a browser visit returns 401 by design. Connect with `npx -y mcp-remote https://n8n-mcp.yourdomain.com/mcp --header "Authorization: Bearer <token>"`, or keep the token out of your shell history and process list with `--header-file <path>` pointing at a file containing `Authorization: Bearer <token>`. Starts in documentation-only mode; to also manage workflows, create an API key in n8n under Settings -> n8n API, set `N8N_API_KEY` in `.env` and run `make restart`. Note that outside n8n Enterprise an API key has full account access. Optionally set `N8N_MCP_ACCESS_TOKEN` (n8n Settings -> Instance-level MCP -> Connect -> API key; n8n 2.34+) for the tools only n8n's own MCP server provides - see `.env.example`.)
     - **Appsmith:** `appsmith.yourdomain.com` (Low-code app builder)
-    - **ComfyUI:** `comfyui.yourdomain.com` (Node-based Stable Diffusion UI)
+    - **ComfyUI:** `comfyui.yourdomain.com` (Node-based Stable Diffusion UI; the wizard asks for NVIDIA, AMD or CPU. Models and custom nodes persist in the `comfyui_data` volume; on NVIDIA, reserve GPUs with `COMFYUI_GPU_COUNT` or pin them with `COMFYUI_GPU_DEVICES`)
     - **Databasus:** `databasus.yourdomain.com`
     - **Dify:** `dify.yourdomain.com` (AI application development platform with comprehensive LLMOps capabilities)
     - **Docling:** `docling.yourdomain.com` (Universal document converter with REST API; web UI available at `/ui`)
@@ -225,6 +227,17 @@ After successful installation, your services are up and running! Here's how to g
 - **How to enable**: Select “Python Runner” in the Service Selection Wizard during install/update, or add the profile manually: `COMPOSE_PROFILES=...,python-runner`.
 - **Where to put code**: Place your Python files in `python-runner/`. The default entry point is `python-runner/main.py`.
 - **Dependencies**: Add them to `python-runner/requirements.txt`; they will be installed automatically on container start.
+
+### Open Terminal: execution sandbox for Open WebUI agents
+
+Open WebUI can search, read and reason, and its built-in code interpreter runs a snippet of Python, but out of the box it cannot keep files around, install a dependency or start a local service. [Open Terminal](https://docs.openwebui.com/features/open-terminal/) closes that loop: a Linux environment the chat drives, with a shell, a persistent home directory, apt/pip/npm installs at runtime, port proxying for local services and Jupyter kernels. Select **Open Terminal** in the wizard (`open-terminal` profile, requires `open-webui`). Nothing is published and there is no URL; Open WebUI talks to `open-terminal:8000` over the internal network.
+
+- **Connect it once**: in Open WebUI open **Admin Settings → Integrations → Open Terminal** and add `http://open-terminal:8000` with the API key from the Welcome Page (`OPEN_TERMINAL_API_KEY` in `.env`). Add it there, not as a tool server, and not in your personal settings: the admin connection keeps the key on the server, a personal one sends it to the browser.
+- **Access is deliberate**: a new connection is visible to admins only. Grant it to users or groups in the same dialog. Everyone you grant gets a shell inside the container (an unprivileged Linux account in multi-user mode, a sudo-capable one with `OPEN_TERMINAL_MULTI_USER=false`), which sits on the same Docker network as Postgres, Ollama, n8n and the rest, so treat it like giving out SSH access.
+- **Multi-user by default**: `OPEN_TERMINAL_MULTI_USER=true` creates a Linux account per Open WebUI user with its own home under the `localai_open_terminal_home` volume. Files and processes are isolated, the network namespace is not: a local service one user starts on a port is reachable through another user's proxy URL. Set it to `false` for a single shared shell.
+- **Size and limits**: the full image (`latest`, or a release tag such as `0.12.5` via `OPEN_TERMINAL_VERSION`) is about 4 GB and is the only variant that supports multi-user and runtime installs; the installer refuses a `slim`/`alpine`/`openshift` variant while multi-user is on. The container is capped at `OPEN_TERMINAL_CPU_LIMIT=2.0` CPUs and `OPEN_TERMINAL_MEMORY_LIMIT=2G`; raise them in `.env` if the agent needs more.
+- **Preinstalled packages**: `OPEN_TERMINAL_PACKAGES`, `OPEN_TERMINAL_PIP_PACKAGES` and `OPEN_TERMINAL_NPM_PACKAGES` are reinstalled on every container start, so long lists slow startup. In multi-user mode they are the only way to add apt packages, because per-user accounts have no `sudo`; the agent can still `pip install --user` and use project-local npm. With multi-user off the shell has `sudo` and installs anything itself.
+- **Egress filtering** (`OPEN_TERMINAL_ALLOWED_DOMAINS`) is not wired into the stack: the image treats an empty value as "block all outbound traffic" and needs `NET_ADMIN`. If you want it, add the variable together with `cap_add: [NET_ADMIN]` to the `open-terminal` service in `docker-compose.override.yml`.
 
 2.  **Explore n8n:**
 
@@ -342,6 +355,15 @@ OLLAMA3_MAX_LOADED_MODELS=1
 ```
 
 The runtime tuning variables — `KEEP_ALIVE`, `NUM_PARALLEL`, `MAX_LOADED_MODELS`, `CONTEXT_LENGTH`, `KV_CACHE_TYPE`, `GPU_OVERHEAD`, `SCHED_SPREAD` — can be set per instance with an `OLLAMA<N>_` prefix, and an unset one falls back to the global value. These take effect on the next `make restart`, with no regeneration needed. (`OLLAMA_GPU_COUNT` has no per-instance form, and `OLLAMA<N>_GPU_DEVICES` does not fall back to the global `OLLAMA_GPU_DEVICES` — it defaults to GPU N-1.)
+
+Anything beyond those knobs — llama.cpp `LLAMA_ARG_*` variables, ROCm `HSA_OVERRIDE_GFX_VERSION`, and so on — goes into optional env files next to `.env`: `ollama.env` applies to every instance, `ollama<N>.env` to one instance and overrides `ollama.env`. A typical use is a smaller free-VRAM margin on a GPU that serves nothing but one Ollama instance:
+
+```env
+# ollama2.env - this GPU serves only ollama2, so leave less VRAM unused
+LLAMA_ARG_FIT_TARGET=128
+```
+
+The files are gitignored and applied on the next `make restart`. Only llama-server-backed models read `LLAMA_ARG_*`; models running on Ollama's own engine ignore them. Keep the `OLLAMA_*` knobs listed above in `.env` — those values win over the files; any other `OLLAMA_*` variable belongs in the files.
 
 Notes:
 

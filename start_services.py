@@ -36,6 +36,7 @@ def get_gpu_devices_compose_files():
     for var, profile, compose_file in [
         ("OLLAMA_GPU_DEVICES", "gpu-nvidia", "docker-compose.ollama-gpu-devices.yml"),
         ("INVOKEAI_GPU_DEVICES", "invokeai-nvidia", "docker-compose.invokeai-gpu-devices.yml"),
+        ("COMFYUI_GPU_DEVICES", "comfyui-nvidia", "docker-compose.comfyui-gpu-devices.yml"),
     ]:
         if not env_values.get(var):
             continue

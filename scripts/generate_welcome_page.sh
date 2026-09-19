@@ -273,7 +273,7 @@ if is_profile_active "letta"; then
 fi
 
 # ComfyUI
-if is_profile_active "comfyui"; then
+if is_profile_active "comfyui-nvidia" || is_profile_active "comfyui-amd" || is_profile_active "comfyui-cpu"; then
     SERVICES_ARRAY+=("    \"comfyui\": {
       \"hostname\": \"$(json_escape "$COMFYUI_HOSTNAME")\",
       \"credentials\": {
@@ -408,6 +408,21 @@ if is_profile_active "n8n-mcp"; then
         \"internal_api\": \"http://n8n-mcp:3000\",
         \"recommendation\": \"Requests must send header: Authorization: Bearer <API Token>. Workflow-management tools require N8N_API_KEY in .env (n8n UI -> Settings -> n8n API), then 'make restart'.\",
         \"docs\": \"https://github.com/czlonkowski/n8n-mcp\"
+      }
+    }")
+fi
+
+# Open Terminal (internal only, driven from Open WebUI)
+if is_profile_active "open-terminal"; then
+    SERVICES_ARRAY+=("    \"open-terminal\": {
+      \"hostname\": null,
+      \"credentials\": {
+        \"api_key\": \"$(json_escape "$OPEN_TERMINAL_API_KEY")\"
+      },
+      \"extra\": {
+        \"internal_api\": \"http://open-terminal:8000\",
+        \"recommendation\": \"Open WebUI: Admin Settings > Integrations > Open Terminal - add this URL and API key, then grant access to users or groups\",
+        \"docs\": \"https://docs.openwebui.com/features/open-terminal/\"
       }
     }")
 fi

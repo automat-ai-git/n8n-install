@@ -93,6 +93,8 @@ cat > "$OUTPUT_FILE" << 'EOF'
 # The runtime knobs fall back to the global OLLAMA_* value, then to the stack
 # default. OLLAMA<N>_GPU_DEVICES is the exception: it defaults to GPU N-1 and
 # does not read the global OLLAMA_GPU_DEVICES.
+# Anything else (e.g. LLAMA_ARG_FIT_TARGET=128) goes into ollama<N>.env next
+# to .env; ollama.env applies to every instance and ollama<N>.env overrides it.
 
 services:
 EOF
@@ -127,7 +129,6 @@ cat >> "$OUTPUT_FILE" << EOF
             - driver: nvidia
               device_ids: ["\${OLLAMA${i}_GPU_DEVICES:-$((i - 1))}"]
               capabilities: [gpu]
-
 EOF
             ;;
         gpu-amd)
@@ -136,13 +137,18 @@ EOF
 cat >> "$OUTPUT_FILE" << EOF
       HIP_VISIBLE_DEVICES: "\${OLLAMA${i}_GPU_DEVICES:-$((i - 1))}"
       ROCR_VISIBLE_DEVICES: "\${OLLAMA${i}_GPU_DEVICES:-$((i - 1))}"
-
 EOF
             ;;
-        cpu)
-            printf '\n' >> "$OUTPUT_FILE"
-            ;;
     esac
+
+    # Appended after the hardware block on purpose: the gpu-amd branch above
+    # continues the 'environment:' mapping, so env_file must come last.
+cat >> "$OUTPUT_FILE" << EOF
+    env_file:
+      - path: ./ollama${i}.env
+        required: false
+
+EOF
 done
 
 log_success "Generated $OUTPUT_FILE with $((OLLAMA_INSTANCE_COUNT - 1)) extra Ollama instance(s)"

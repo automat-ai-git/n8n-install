@@ -92,7 +92,10 @@ services:
 # databasus / appsmith healthcheck-обходы убраны — upstream v1.8.0 (#85) чинит их штатно
 # (databasus — родная команда healthcheck, appsmith — тот же обход прокси через curl)
 
-   comfyui:
+   # upstream v1.13.0 (#122): профиль comfyui разбит на comfyui-nvidia/-amd/-cpu
+   # (container_name остался comfyui). Override теперь целится в comfyui-nvidia,
+   # иначе он создаёт отдельный сервис с тем же container_name → коллизия.
+   comfyui-nvidia:
      # megapak: all-in-one (dev-kit + десятки custom nodes), CUDA 13.0 / Python 3.13 / PyTorch 2.11.
      # Заметно тяжелее slim по размеру образа. Тег плавающий в рамках линии pt211.
      image: yanwk/comfyui-boot:cu130-megapak-pt211
@@ -112,8 +115,9 @@ services:
        - ./storage-user/input:/root/ComfyUI/input
        - ./storage-user/output:/root/ComfyUI/output
        - ./storage-user/workflows:/root/ComfyUI/user/default/workflows
-     # Активация GPU (аналог --gpus только 1) — ComfyUI upstream НЕ покрывает
-     # нативным механизмом GPU-пиннинга, поэтому оставляем ручной пиннинг как есть
+     # Активация GPU (аналог --gpus только 1). upstream v1.13.0 добавил нативный
+     # COMFYUI_GPU_DEVICES, но на WSL2 device_ids карту не изолирует (как у ollama),
+     # поэтому не используем его и оставляем ручной пиннинг через CUDA_VISIBLE_DEVICES
      deploy:
        resources:
          reservations:

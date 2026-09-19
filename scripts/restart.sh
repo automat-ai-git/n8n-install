@@ -11,6 +11,7 @@
 #   - docker-compose.ollama-instances.yml (if exists and an Ollama profile active)
 #   - docker-compose.ollama-gpu-devices.yml (if gpu-nvidia profile active and OLLAMA_GPU_DEVICES set)
 #   - docker-compose.invokeai-gpu-devices.yml (if invokeai-nvidia profile active and INVOKEAI_GPU_DEVICES set)
+#   - docker-compose.comfyui-gpu-devices.yml (if comfyui-nvidia profile active and COMFYUI_GPU_DEVICES set)
 #   - docker-compose.open-webui-postgres.yml (if open-webui profile active and OPEN_WEBUI_DATABASE=postgres)
 #   - supabase/docker/docker-compose.yml (if exists and supabase profile active)
 #   - dify/docker/docker-compose.yaml (if exists and dify profile active)
@@ -69,6 +70,13 @@ if is_profile_active "crawl4ai" && [ -z "${CRAWL4AI_API_TOKEN:-}" ]; then
     log_warning "CRAWL4AI_API_TOKEN is empty - Crawl4AI will be unreachable from other containers. Run 'make update' to generate the token."
 fi
 
+# The pre-1.13 'comfyui' profile matches no service any more. Compose accepts
+# an unknown profile silently, and 'down' leaves the old container running as
+# an orphan, so ComfyUI would look alive while still on the old CPU-only setup.
+if is_profile_active "comfyui"; then
+    log_warning "The 'comfyui' profile was replaced by comfyui-nvidia / comfyui-amd / comfyui-cpu in 1.13 - ComfyUI will NOT be restarted by this command. Run 'make update' to pick the hardware profile."
+fi
+
 log_info "Restarting services..."
 log_info "Using compose files: ${COMPOSE_FILES[*]}"
 
@@ -116,6 +124,9 @@ if path=$(get_ollama_gpu_devices_compose); then
     MAIN_COMPOSE_FILES+=("-f" "$path")
 fi
 if path=$(get_invokeai_gpu_devices_compose); then
+    MAIN_COMPOSE_FILES+=("-f" "$path")
+fi
+if path=$(get_comfyui_gpu_devices_compose); then
     MAIN_COMPOSE_FILES+=("-f" "$path")
 fi
 if path=$(get_open_webui_postgres_compose); then

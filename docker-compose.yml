@@ -22,6 +22,7 @@ volumes:
   nocodb_data:
   ollama_storage:
   open-webui:
+  open_terminal_home:
   paddle_cache:
   paddleocr_cache:
   paddlex_data:
@@ -138,6 +139,15 @@ x-ollama: &service-ollama
     OLLAMA_MAX_LOADED_MODELS: "${OLLAMA_MAX_LOADED_MODELS:-2}"
     OLLAMA_NUM_PARALLEL: "${OLLAMA_NUM_PARALLEL:-}"
     OLLAMA_SCHED_SPREAD: "${OLLAMA_SCHED_SPREAD:-}"
+  # Optional extra environment for every instance (llama.cpp LLAMA_ARG_*,
+  # ROCm HSA_OVERRIDE_GFX_VERSION, ...). Kept out of 'environment:' on purpose:
+  # an interpolated "${VAR:-}" would hand llama-server an EMPTY value, and an
+  # empty LLAMA_ARG_FIT_TARGET makes it exit at startup. A missing file adds
+  # nothing. Keys set in 'environment:' above always win over this file.
+  # Per-instance files (ollama2.env, ...) are added by generate_ollama_instances.sh.
+  env_file:
+    - path: ./ollama.env
+      required: false
   volumes:
     - ollama_storage:/root/.ollama
 
@@ -166,6 +176,26 @@ x-invokeai: &service-invokeai
     timeout: 10s
     retries: 5
     start_period: 90s
+
+# ComfyUI shared config (hardware variants below, mutually exclusive profiles like InvokeAI).
+# The volume MUST be /root: the image runs as root, its entrypoint copies the
+# bundled ComfyUI to /root/ComfyUI on first start and models, custom nodes and
+# user data live under it. (/home/runner, the old mount point, is the non-root
+# layout of the archived cu121 image; every tag this stack has used runs as
+# root, so nothing was ever written there.) Consequence: the ComfyUI code itself lives
+# in the volume and is updated through ComfyUI-Manager, not by pulling the image.
+x-comfyui: &service-comfyui
+  container_name: comfyui
+  restart: unless-stopped
+  logging: *default-logging
+  volumes:
+    - comfyui_data:/root
+  healthcheck:
+    test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8188', timeout=5)"]
+    interval: 10s
+    timeout: 5s
+    retries: 5
+    start_period: 60s
 
 # Worker-runner anchor for sidecar pattern (runner connects to worker via localhost)
 x-n8n-worker-runner: &service-n8n-worker-runner
@@ -217,6 +247,53 @@ services:
     volumes:
       - ~/.flowise:/root/.flowise
     entrypoint: /bin/sh -c "sleep 3; flowise start"
+
+  # ---------------------------------------------------------------------------
+  # Open Terminal (profile "open-terminal") - execution environment for Open WebUI
+  # agents: shell, filesystem, runtime package installs. Internal only: no ports,
+  # no Caddy block. Open WebUI reaches it as http://open-terminal:8000; the admin
+  # adds it under Admin Settings > Integrations > Open Terminal, so the key stays
+  # server-side. Only the full image ("latest" or a release tag) supports
+  # multi-user and runtime installs; the slim/alpine/openshift variants do
+  # neither, and 05_configure_services.sh refuses them in multi-user mode.
+  # Multi-user creates a plain Linux
+  # account (no sudo) per Open WebUI user id, hence the volume is /home, not
+  # /home/user; with multi-user off the chat gets the image's sudo-capable user.
+  # Never mount docker.sock here: the entrypoint would hand the agent's shell the
+  # host Docker daemon. OPEN_TERMINAL_ALLOWED_DOMAINS is deliberately absent: the
+  # entrypoint reads a set-but-empty value as "block all egress" and needs
+  # NET_ADMIN for iptables, so an interpolated default would crash the container.
+  # Add it together with cap_add NET_ADMIN in docker-compose.override.yml if wanted.
+  # ---------------------------------------------------------------------------
+  open-terminal:
+    image: "ghcr.io/open-webui/open-terminal:${OPEN_TERMINAL_VERSION:-latest}"
+    container_name: open-terminal
+    profiles: ["open-terminal"]
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      <<: *proxy-env
+      OPEN_TERMINAL_API_KEY: "${OPEN_TERMINAL_API_KEY}"
+      OPEN_TERMINAL_MULTI_USER: "${OPEN_TERMINAL_MULTI_USER:-true}"
+      # Reinstalled on every container start. In multi-user mode this is the only
+      # way to add apt packages (per-user accounts have no sudo).
+      OPEN_TERMINAL_PACKAGES: "${OPEN_TERMINAL_PACKAGES:-}"
+      OPEN_TERMINAL_PIP_PACKAGES: "${OPEN_TERMINAL_PIP_PACKAGES:-}"
+      OPEN_TERMINAL_NPM_PACKAGES: "${OPEN_TERMINAL_NPM_PACKAGES:-}"
+    volumes:
+      - open_terminal_home:/home
+    # Safety valve against a runaway build or a stuck port proxy, not a quota.
+    deploy:
+      resources:
+        limits:
+          cpus: "${OPEN_TERMINAL_CPU_LIMIT:-2.0}"
+          memory: "${OPEN_TERMINAL_MEMORY_LIMIT:-2G}"
+    healthcheck:
+      test: ["CMD-SHELL", "http_proxy= https_proxy= HTTP_PROXY= HTTPS_PROXY= curl -fs http://localhost:8000/docs || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
 
   open-webui:
     image: ghcr.io/open-webui/open-webui:main
@@ -331,6 +408,12 @@ services:
       # unconfigured, so the service still starts cleanly.
       N8N_API_URL: "${N8N_API_URL:-http://n8n:5678}"
       N8N_API_KEY: "${N8N_API_KEY:-}"
+      # Optional. The access token of n8n's own MCP server (Settings ->
+      # Instance-level MCP, n8n >= 2.34) - a separate secret from the Public
+      # API key. It unlocks tools the Public API cannot serve (agents, dynamic
+      # node resources, workflow version history, datatable columns). The
+      # endpoint is derived from N8N_API_URL. Blank = Public API only, as before.
+      N8N_MCP_ACCESS_TOKEN: "${N8N_MCP_ACCESS_TOKEN:-}"
       # n8n resolves to a private Docker IP, and n8n-MCP's own SSRF guard
       # rejects private ranges in both "strict" (upstream default) and
       # "moderate", which would fail every n8n API call. "permissive" still
@@ -748,7 +831,7 @@ services:
       start_period: 1s
 
   minio:
-    image: minio/minio
+    image: quay.io/minio/minio:latest
     container_name: minio
     restart: always
     profiles: ["langfuse"]
@@ -1217,20 +1300,35 @@ services:
       retries: 5
       start_period: 60s
 
-  comfyui:
-    image: yanwk/comfyui-boot:cu128-slim
-    container_name: comfyui
-    profiles: ["comfyui"]
-    restart: unless-stopped
-    environment:
-      CLI_ARGS: --listen 0.0.0.0 --cpu
-    volumes:
-      - comfyui_data:/home/runner
-    healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8188', timeout=5)"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+  # ComfyUI hardware variants (mutually exclusive profiles, like InvokeAI).
+  # Deliberately NO CLI_ARGS here: each image ships the right default
+  # ("--cpu" baked into the cpu image, empty on the GPU images) and the
+  # entrypoint already adds --listen --port 8188. An explicit CLI_ARGS: ""
+  # would strip --cpu from the CPU image.
+  comfyui-nvidia:
+    <<: *service-comfyui
+    image: yanwk/comfyui-boot:cu126-slim
+    profiles: ["comfyui-nvidia"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: "${COMFYUI_GPU_COUNT:-1}"
+              capabilities: [gpu]
+
+  comfyui-amd:
+    <<: *service-comfyui
+    image: yanwk/comfyui-boot:rocm
+    profiles: ["comfyui-amd"]
+    devices:
+      - "/dev/kfd"
+      - "/dev/dri"
+
+  comfyui-cpu:
+    <<: *service-comfyui
+    image: yanwk/comfyui-boot:cpu
+    profiles: ["comfyui-cpu"]
 
   libretranslate:
     image: libretranslate/libretranslate:latest
@@ -1371,7 +1469,7 @@ services:
       - ragflow_mysql_data:/var/lib/mysql
 
   ragflow-minio:
-    image: minio/minio
+    image: quay.io/minio/minio:latest
     container_name: ragflow-minio
     profiles: ["ragflow"]
     restart: unless-stopped

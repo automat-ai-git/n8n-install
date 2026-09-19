@@ -82,6 +82,7 @@ log_success "Service configuration completed."
 # Clean up legacy containers from old naming conventions
 cleanup_legacy_n8n_workers
 cleanup_legacy_postgresus
+cleanup_legacy_comfyui
 
 # Clean up services removed from the stack
 cleanup_removed_hermes

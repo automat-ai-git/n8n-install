@@ -108,6 +108,11 @@ if is_profile_active "open-webui"; then
     check_image_update "open-webui" "ghcr.io/open-webui/open-webui:main"
 fi
 
+if is_profile_active "open-terminal"; then
+    log_subheader "Open Terminal"
+    check_image_update "open-terminal" "ghcr.io/open-webui/open-terminal:${OPEN_TERMINAL_VERSION:-latest}"
+fi
+
 if is_profile_active "portainer"; then
     log_subheader "Portainer"
     check_image_update "portainer" "portainer/portainer-ce:latest"
@@ -133,6 +138,17 @@ elif is_profile_active "invokeai-amd"; then
 elif is_profile_active "invokeai-cpu"; then
     log_subheader "InvokeAI"
     check_image_update "invokeai" "ghcr.io/invoke-ai/invokeai:main-cpu"
+fi
+
+if is_profile_active "comfyui-nvidia"; then
+    log_subheader "ComfyUI"
+    check_image_update "comfyui" "yanwk/comfyui-boot:cu126-slim"
+elif is_profile_active "comfyui-amd"; then
+    log_subheader "ComfyUI"
+    check_image_update "comfyui" "yanwk/comfyui-boot:rocm"
+elif is_profile_active "comfyui-cpu"; then
+    log_subheader "ComfyUI"
+    check_image_update "comfyui" "yanwk/comfyui-boot:cpu"
 fi
 
 if is_profile_active "qdrant"; then

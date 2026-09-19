@@ -59,6 +59,12 @@ if [ -f "$ENV_FILE" ]; then
         count_warning "No service profiles are active"
     fi
 
+    # Renamed in 1.13: the bare 'comfyui' profile activates nothing, so the
+    # old container keeps running untouched by restarts (or nothing runs at all).
+    if is_profile_active "comfyui"; then
+        count_error "The 'comfyui' profile was replaced by comfyui-nvidia / comfyui-amd / comfyui-cpu in 1.13 — ComfyUI is not managed by this stack until you run 'make update' and pick a hardware profile."
+    fi
+
     # Ollama API exposure: when OLLAMA_HOSTNAME points at a real domain, the Caddy
     # bearer-token gate needs a non-empty OLLAMA_CADDY_API_TOKEN to be usable. With
     # an empty token the matcher becomes "Bearer " (trailing space); Go trims

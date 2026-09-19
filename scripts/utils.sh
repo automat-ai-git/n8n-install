@@ -358,6 +358,18 @@ get_invokeai_gpu_devices_compose() {
     return 1
 }
 
+# Get ComfyUI GPU pinning compose file path if the comfyui-nvidia profile is
+# active and COMFYUI_GPU_DEVICES has a non-empty value (requires load_env first)
+# Usage: path=$(get_comfyui_gpu_devices_compose) && COMPOSE_FILES+=("-f" "$path")
+get_comfyui_gpu_devices_compose() {
+    local compose_file="$PROJECT_ROOT/docker-compose.comfyui-gpu-devices.yml"
+    if [ -f "$compose_file" ] && is_profile_active "comfyui-nvidia" && [ -n "${COMFYUI_GPU_DEVICES:-}" ]; then
+        echo "$compose_file"
+        return 0
+    fi
+    return 1
+}
+
 # Get the extra-Ollama-instances compose file path if it exists and an Ollama
 # hardware profile is active (requires COMPOSE_PROFILES to be set)
 # Usage: path=$(get_ollama_instances_compose) && COMPOSE_FILES+=("-f" "$path")
@@ -463,6 +475,11 @@ build_compose_files_array() {
         COMPOSE_FILES+=("-f" "$path")
     elif [ -n "${INVOKEAI_GPU_DEVICES:-}" ]; then
         log_warning "INVOKEAI_GPU_DEVICES is set but GPU pinning is NOT applied (requires the invokeai-nvidia profile and docker-compose.invokeai-gpu-devices.yml)"
+    fi
+    if path=$(get_comfyui_gpu_devices_compose); then
+        COMPOSE_FILES+=("-f" "$path")
+    elif [ -n "${COMFYUI_GPU_DEVICES:-}" ]; then
+        log_warning "COMFYUI_GPU_DEVICES is set but GPU pinning is NOT applied (requires the comfyui-nvidia profile and docker-compose.comfyui-gpu-devices.yml)"
     fi
     if path=$(get_open_webui_postgres_compose); then
         COMPOSE_FILES+=("-f" "$path")
@@ -889,6 +906,27 @@ cleanup_legacy_postgresus() {
         docker stop "$container_name" 2>/dev/null || true
         docker rm -f "$container_name" 2>/dev/null || true
         log_success "Legacy postgresus container removed. Databasus will use existing data via volume alias."
+    fi
+}
+
+# Clean up the pre-1.13 ComfyUI container (issue #122)
+# The service was renamed from "comfyui" to comfyui-nvidia/-amd/-cpu while the
+# container name stayed "comfyui". 'docker compose down' leaves the old
+# container behind as an orphan, and 'up' then fails with 'container name
+# "/comfyui" is already in use'. Only the container is removed; comfyui_data
+# stays (it never held anything - the old mount point was unused).
+# Usage: cleanup_legacy_comfyui
+cleanup_legacy_comfyui() {
+    local container_name="comfyui"
+    local labels
+    # Both labels in one inspect: a "comfyui" container from another Compose
+    # project must not be touched, even though the name would collide anyway.
+    labels=$(docker inspect --format '{{ index .Config.Labels "com.docker.compose.project" }}/{{ index .Config.Labels "com.docker.compose.service" }}' "$container_name" 2>/dev/null) || return 0
+    if [ "$labels" = "localai/comfyui" ]; then
+        log_info "Found pre-1.13 ComfyUI container, removing it so the hardware-specific service can take its place..."
+        docker stop "$container_name" 2>/dev/null || true
+        docker rm -f "$container_name" 2>/dev/null || true
+        log_success "Legacy comfyui container removed. Models and custom nodes were never stored in it."
     fi
 }
 
