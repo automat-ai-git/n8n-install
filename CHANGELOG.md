@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [1.17.0] - 2026-10-14
+
+### Added
+- **`make pull`** - Pulls the latest images for the selected services without the git sync, package upgrade, `.env` update and wizard of `make update`; run `make restart` afterwards to recreate the containers. Locally built services (n8n, its runners, OpenClaw) are skipped; `make update` rebuilds them.
+
+### Fixed
+- **Installer** - `make update` aborted on a transient registry timeout during the image pull, after the git sync, the package upgrade and the `.env` rewrite but before any container was recreated, leaving the install half-updated. A failed pooled pull is now retried one service at a time (3 attempts with backoff; finished layers are cached). If a service still cannot be pulled but its configured image is present locally, the update continues on that image and lists the service at the end with `make pull && make restart`; if the image is not present at all, the update stops before restarting anything. The local n8n/OpenClaw images are now built (with the same retries) before the stack is stopped, so a registry failure there also stops the update with the old stack running. Supabase and Dify still update their repositories and pull changed images during the restart, without retries (issue #140).
+
 ## [1.16.4] - 2026-10-10
 
 ### Fixed

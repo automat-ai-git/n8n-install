@@ -1,4 +1,4 @@
-.PHONY: help install update update-preview git-pull clean clean-all logs status monitor restart stop start show-restarts doctor switch-beta switch-stable import setup-tls openclaw
+.PHONY: help install update update-preview pull git-pull clean clean-all logs status monitor restart stop start show-restarts doctor switch-beta switch-stable import setup-tls openclaw
 
 PROJECT_NAME := localai
 
@@ -8,6 +8,7 @@ help:
 	@echo "  make install           Full installation"
 	@echo "  make update            Update system and services (resets to origin)"
 	@echo "  make update-preview    Preview available updates (dry-run)"
+	@echo "  make pull              Pull prebuilt images only (then: make restart)"
 	@echo "  make git-pull          Update for forks (merges from upstream)"
 	@echo "  make clean             Remove unused Docker resources (preserves data)"
 	@echo "  make clean-all         Remove ALL Docker resources including data (DANGEROUS)"
@@ -37,6 +38,9 @@ update:
 
 update-preview:
 	bash ./scripts/update_preview.sh
+
+pull:
+	bash ./scripts/pull_images.sh
 
 git-pull:
 	sudo GIT_MODE=merge bash ./scripts/update.sh

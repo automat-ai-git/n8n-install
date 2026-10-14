@@ -154,6 +154,7 @@ make git-pull   # for forks: merge from upstream instead of resetting
 | `make install` | Full installation |
 | `make update` | Update the installer and all services |
 | `make update-preview` | Preview available updates (dry run) |
+| `make pull` | Pull the latest prebuilt images only (n8n and OpenClaw are rebuilt by `make update`); run `make restart` afterwards |
 | `make git-pull` | Update a fork by merging from upstream |
 | `make status` | Container status |
 | `make logs` / `make logs s=n8n` | Logs for all services or for one |
@@ -185,7 +186,7 @@ Run `make help` for the full list.
 
 - **Sites don't load.** The server is usually out of RAM or CPU for the services you selected. Check `free -h` and `make monitor`, start with n8n only, and enable other services one by one. `make doctor` checks DNS, certificates and containers.
 - **"Dangerous site" warning right after install.** Caddy briefly serves a temporary certificate while it gets one from Let's Encrypt. This normally clears within hours; if it lasts more than a day, check `make logs s=caddy` and your DNS records.
-- **Docker images fail to pull.** Temporarily disable your VPN.
+- **Docker images fail to pull.** Temporarily disable your VPN. `make update` retries a failed pull one service at a time. Services that still could not be updated but have an image on the server are started from it and listed at the end; finish them with `make pull && make restart`. If a service has no image at all, or the local n8n/OpenClaw images cannot be built, `make update` stops before restarting anything; run `make pull`, then `make update` again.
 - **`make update` fails.** Force-sync with upstream. This discards local changes to tracked files:
 
   ```bash
