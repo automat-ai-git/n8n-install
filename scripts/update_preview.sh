@@ -192,9 +192,8 @@ if [ $UPDATES_AVAILABLE -gt 0 ]; then
     echo -e "  ${WHITE}To apply updates, run:${NC}"
     echo -e "    ${CYAN}make update${NC}"
     echo ""
-    echo -e "  ${DIM}Or manually:${NC}"
-    echo -e "    ${DIM}docker compose -p localai pull${NC}"
-    echo -e "    ${DIM}docker compose -p localai up -d${NC}"
+    echo -e "  ${DIM}Or only the prebuilt images (n8n and OpenClaw are rebuilt by make update):${NC}"
+    echo -e "    ${DIM}make pull && make restart${NC}"
 else
     echo -e "  ${BRIGHT_GREEN}All images are up to date!${NC}"
 fi

@@ -529,6 +529,48 @@ build_compose_files_array() {
     fi
 }
 
+# Runs `docker compose -p localai ARGS...` up to 3 times, 15s then 30s apart; LABEL names it in the log.
+compose_with_retry() {
+    local label="$1" attempts=3 attempt
+    shift
+    for ((attempt = 1; ; attempt++)); do
+        docker compose -p localai "$@" && return 0
+        if [ "$attempt" -ge "$attempts" ]; then
+            log_error "$label failed after $attempts attempts."
+            return 1
+        fi
+        log_warning "$label failed (attempt $attempt/$attempts), retrying in $((attempt * 15))s..."
+        sleep $((attempt * 15))
+    done
+}
+
+# Pulls COMPOSE_FILES' images (build: services skipped); if the pooled pull fails (parallel pulls can time
+# out on a slow or flaky link), retries per service. Returns 1 with failures in FAILED_PULLS (empty: Docker/config error).
+pull_images_with_retry() {
+    local services svc total n=0
+    FAILED_PULLS=()
+    if docker compose -p localai "${COMPOSE_FILES[@]}" pull --ignore-buildable; then
+        return 0
+    fi
+
+    if ! docker info >/dev/null 2>&1; then
+        log_error "Docker is not reachable (daemon down or no permission for the docker socket)."
+        return 1
+    fi
+    log_warning "Pulling all images at once failed. Retrying one service at a time..."
+    if ! services=$(docker compose -p localai "${COMPOSE_FILES[@]}" config --services); then
+        log_error "Could not list services from the compose files."
+        return 1
+    fi
+    total=$(wc -l <<< "$services" | tr -d ' ')
+    for svc in $services; do
+        n=$((n + 1))
+        log_info "Pulling $svc ($n/$total)..."
+        compose_with_retry "Pull of $svc" "${COMPOSE_FILES[@]}" pull --ignore-buildable "$svc" || FAILED_PULLS+=("$svc")
+    done
+    [ ${#FAILED_PULLS[@]} -eq 0 ]
+}
+
 #=============================================================================
 # UTILITIES
 #=============================================================================

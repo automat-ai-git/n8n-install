@@ -36,6 +36,7 @@ This is **Selfhost AI** (repository `selfhost-ai`, formerly `n8n-install`), a Do
 - `scripts/generate_ollama_instances.sh`: Generates extra Ollama instances compose file (multi-GPU)
 - `scripts/update.sh`: Update orchestrator (syncs with origin and updates images)
 - `scripts/update_preview.sh`: Preview available updates without applying (dry-run)
+- `scripts/pull_images.sh`: Image pull without the rest of the update (pooled, then per-service retries if that fails); skips locally built services (n8n, runners, OpenClaw) and recreates nothing (used by `make pull`)
 - `scripts/doctor.sh`: System diagnostics (DNS, SSL, containers, disk, memory)
 - `scripts/apply_update.sh`: Applies updates after git sync
 - `scripts/docker_cleanup.sh`: Removes unused Docker resources (used by `make clean`)
@@ -74,6 +75,7 @@ The update flow (`scripts/update.sh`) similarly orchestrates: git fetch + reset 
 make install           # Full installation (runs scripts/install.sh)
 make update            # Update system and services (resets to origin)
 make update-preview    # Preview available updates (dry-run)
+make pull              # Pull prebuilt images only (then make restart)
 make git-pull          # Update for forks (merges from upstream/main)
 make clean             # Remove unused Docker resources (preserves data)
 make clean-all         # Remove ALL Docker resources including data (DANGEROUS)
@@ -281,6 +283,8 @@ Key functions:
 - `harden_supabase_gateway_bind` - Keep the Supabase API gateway bound to loopback (issue #108)
 - `cleanup_stale_ollama_instances` - Remove Ollama instance containers above the configured count
 - `build_compose_files_array` - Build global `COMPOSE_FILES` array with all active compose files (main + external)
+- `compose_with_retry "label" ARGS...` - `docker compose -p localai ARGS` up to 3 times, 15s then 30s apart
+- `pull_images_with_retry` - Pooled `pull --ignore-buildable` over `COMPOSE_FILES`; on failure (and with Docker reachable) pulls one service at a time via `compose_with_retry` and leaves the unpulled services in global `FAILED_PULLS`. `apply_update.sh` continues when the image each of them is configured with is present locally, then runs a retried `build --pull` of the main stack; a missing image or a failed build stops the update before 06, whose `down` would otherwise leave the stack stopped when its own unretried pull/build fails. The image is read from `config --format json`, because `config --images SERVICE` also lists the images of its `depends_on` services
 - `openclaw_init_failed` - True if the last openclaw-init run exited non-zero or logged `openclaw-init: ERROR` (used by doctor, 07 and restart.sh)
 
 ### Service Profiles
@@ -449,6 +453,7 @@ bash -n scripts/generate_n8n_workers.sh
 bash -n scripts/generate_ollama_instances.sh
 bash -n scripts/apply_update.sh
 bash -n scripts/update.sh
+bash -n scripts/pull_images.sh
 bash -n scripts/install.sh
 bash -n scripts/restart.sh
 bash -n scripts/doctor.sh
