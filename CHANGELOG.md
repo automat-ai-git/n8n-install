@@ -2,6 +2,74 @@
 
 ## [Unreleased]
 
+## [1.17.0] - 2026-10-14
+
+### Added
+- **`make pull`** - Pulls the latest images for the selected services without the git sync, package upgrade, `.env` update and wizard of `make update`; run `make restart` afterwards to recreate the containers. Locally built services (n8n, its runners, OpenClaw) are skipped; `make update` rebuilds them.
+
+### Fixed
+- **Installer** - `make update` aborted on a transient registry timeout during the image pull, after the git sync, the package upgrade and the `.env` rewrite but before any container was recreated, leaving the install half-updated. A failed pooled pull is now retried one service at a time (3 attempts with backoff; finished layers are cached). If a service still cannot be pulled but its configured image is present locally, the update continues on that image and lists the service at the end with `make pull && make restart`; if the image is not present at all, the update stops before restarting anything. The local n8n/OpenClaw images are now built (with the same retries) before the stack is stopped, so a registry failure there also stops the update with the old stack running. Supabase and Dify still update their repositories and pull changed images during the restart, without retries (issue #140).
+
+## [1.16.4] - 2026-10-10
+
+### Fixed
+- **Installer** - `make update` and re-running the installer on an existing host aborted with `402 Payment Required`: `03_generate_secrets.sh` installed the `caddy` package from Caddy's Cloudsmith apt repository on every run just to hash basic-auth passwords, and that repository no longer serves packages or its index. Hashes now come from `caddy hash-password` in the `caddy:2-alpine` image the stack already runs (`docker run --rm`, password over stdin), so no Caddy package is installed on the host. The output is checked to be a bcrypt hash, and hashes are computed before `.env` is rewritten, so a Docker failure leaves `.env` untouched. The leftover Cloudsmith apt source and key are removed before `apt update` runs. The `make update` that installs 1.16.4 still runs the previous `update.sh`: its `apt-get update` prints the 402 errors once and skips the OS package upgrade for that run, while the update itself continues; the next `make update` upgrades packages as usual, and a failed package update is now reported as a warning instead of "updated successfully". A `caddy` package an aborted older run left installed on the host (its `caddy.service` can hold port 80) is reported with `apt purge caddy`, not removed. Existing hashes in `.env` are kept as they are.
+
+## [1.16.3] - 2026-10-10
+
+### Fixed
+- **Crawl4AI (security)** - The `crawl4ai` service loaded the whole `.env` via `env_file`, so the crawler container received every variable of the stack, including all secrets (Postgres, JWT/Supabase, n8n, Open Terminal, Qdrant/Weaviate, OpenClaw, Cloudflare Tunnel, the GOST upstream proxy and more). It now gets only `CRAWL4AI_API_TOKEN`, `OPENAI_API_KEY` and the proxy variables; the next `make update` or `make restart` recreates it without the rest. If you added other Crawl4AI settings to `.env` (another LLM provider key, `LLM_PROVIDER`, `CRAWL4AI_*`), move them to `crawl4ai.environment` in `docker-compose.override.yml`. If you have been running the `crawl4ai` profile, treat those values as exposed: rotate external credentials (Cloudflare Tunnel token, OpenRouter and other API keys, bot tokens, SMTP) at the provider; to rotate `OPEN_TERMINAL_API_KEY`, empty it in `.env`, run `make update` (it generates a new key) and re-enter it in Open WebUI under Admin Settings → Integrations → Open Terminal. `POSTGRES_PASSWORD`, `JWT_SECRET` and `N8N_ENCRYPTION_KEY` cannot be rotated by just editing `.env`: Postgres keeps its password in the data volume, `ANON_KEY`/`SERVICE_ROLE_KEY` are signed with `JWT_SECRET`, and a new `N8N_ENCRYPTION_KEY` makes stored n8n credentials unreadable (issue #137).
+
+## [1.16.2] - 2026-10-05
+
+### Fixed
+- **Langfuse / RAGFlow** - `make update` aborted with `401 UNAUTHORIZED` for `quay.io/minio/minio` whenever the `langfuse` or `ragflow` profile was active: that repository no longer allows anonymous pulls (MinIO stopped publishing images), and Docker Hub no longer serves `minio/minio` either. The `minio` and `ragflow-minio` services now run `pgsty/silo`, a maintained MinIO fork (also used by RAGFlow upstream) that keeps the data format, so existing buckets are picked up as they are (issue #135).
+- **Caddy (security)** - Port `7687` (Neo4j Bolt) was published on `0.0.0.0` on every install, also without the `neo4j` profile, and Docker-published ports bypass ufw. It is now published only while `neo4j` is active (`docker-compose.neo4j.yml`); the next `make update` or `make restart` closes it on installs without Neo4j (issue #134).
+
+## [1.16.1] - 2026-10-02
+
+### Fixed
+- **n8n (security)** - `https://<N8N_HOSTNAME>/metrics` was publicly reachable without authentication on every release so far: it exposed the n8n version and process metrics, and since 1.10.0 also every workflow name and ID. Caddy now answers 404 for `/metrics` on the n8n host; Prometheus scrapes n8n over the Docker network, so Grafana dashboards and alerts are unaffected. `make doctor` reports an error if Caddy serves the endpoint, and with the `cloudflare-tunnel` profile also if it is public through the tunnel. The documented tunnel route (`http://n8n:5678`) bypasses Caddy, so `cloudflare-instructions.md` now has a WAF expression to block it (issue #132).
+
+## [1.16.0] - 2026-09-28
+
+### Added
+- **Keelflow** - New optional `keelflow` profile: a maintained continuation of Flowise, which is archived upstream and gets no more security fixes. It runs next to Flowise with its own `keelflow_data` volume; `docs/keelflow.md` shows how to move Flowise data over (issue #129).
+
+### Fixed
+- **Flowise** - Crash-looped after any install or update that pulled `latest` (3.1.4, image built 2026-07-29): it fails at startup with the default SQLite database (`TypeError: this.db.exec is not a function`) and runs as the non-root `node` user, which ignores the `~/.flowise:/root/.flowise` mount. The image is now pinned to `3.1.3`; flows and credentials in `~/.flowise` are picked up again after `make update`.
+
+## [1.15.1] - 2026-09-23
+
+### Fixed
+- **n8n workers** - Lowering `N8N_WORKER_COUNT` now removes the extra `n8n-worker-N` / `n8n-runner-N` containers on install, `make update` or `bash scripts/generate_n8n_workers.sh`; each is stopped gracefully first (up to 30s to finish running executions). Before, the regenerated compose file no longer listed them, so `down` left them running as orphans that kept processing queue jobs. `make doctor` warns about a worker above the configured count.
+
+### Removed
+- **scripts/download_top_workflows.sh** - Maintainer-only script that downloaded popular templates from n8n.io; nothing in the installer or Makefile called it. The bundled workflows in `n8n/backup/workflows/` stay.
+
+## [1.15.0] - 2026-09-23
+
+### Added
+- **OpenClaw** - Install and `make update` ask for an optional OpenRouter API key (`OPENCLAW_OPENROUTER_API_KEY`, passed to the gateway as `OPENROUTER_API_KEY`; asked again on each `make update` while it is empty; surrounding whitespace is trimmed and a value with characters a key cannot have, such as pasted quotes or inner spaces, is rejected instead of breaking `.env`), so OpenRouter needs no provider or sign-in setup in the dashboard; only the model is picked there (Settings → Models → Defaults for all agents). The dashboard's OpenRouter OAuth cannot complete behind the domain because OpenClaw fixes its callback to `localhost:3000`; `docs/openclaw.md` explains this, shows where the model is picked and warns about the "OpenRouter API key" choice under Arcee AI, which installs a separate plugin whose setup check failed in testing even with a valid key.
+
+## [1.14.2] - 2026-09-23
+
+### Changed
+- **Documentation** - README restructured: quick start near the top, services grouped into category tables with their URLs (replacing the separate service list and URL list), and a single Makefile table. Detailed guides moved to `docs/` (`n8n.md`, `n8n-assistant-sandbox.md`, `openclaw.md`, `open-terminal.md`, `ollama-multi-gpu.md`, `open-webui-postgres.md`, `security.md`), content unchanged apart from headings and short intros; installer messages and `.env.example` now point there.
+
+### Fixed
+- **make doctor** - The DNS check now covers the hostname of every active profile that has a Caddy site (plus the Welcome Page), instead of a fixed n8n / Grafana / Portainer / Welcome list that was checked whether or not those services were selected. An active service whose hostname is empty or still `*.yourdomain.com` is now a warning instead of being skipped silently, and a missing `host` binary skips the DNS checks with one warning instead of reporting every hostname as unresolvable.
+
+## [1.14.1] - 2026-09-23
+
+### Changed
+- **OpenClaw** - The dashboard opens right after the Caddy basic-auth login: no second (gateway) password and no browser approval with `make openclaw a="devices approve ..."` any more. The gateway now runs in OpenClaw's trusted-proxy mode. Caddy passes the authenticated user in `X-Forwarded-User` over a new private `openclaw-proxy` Docker network that only Caddy and OpenClaw join. `openclaw-init` sets `gateway.trustedProxies` to exactly that network's subnet, so containers on the stack's default network cannot forge the header; any process on the host itself (the subnet's gateway address) is trusted too, so do not enable the profile on a server shared with untrusted local users. If the subnet cannot be determined, the trusted-proxy settings are rejected or a stale pre-1.14.1 `openclaw-init` container is reused, `openclaw-init` tries to fall back to the previous password login with no trusted proxy; `make doctor`, `make restart` and the final report of install / `make update` show it. Only `OPENCLAW_USERNAME` is accepted, and new browsers are auto-approved with admin scope. The basic-auth password is now the only key to the agent, and through it to the server. `OPENCLAW_GATEWAY_PASSWORD` remains for the local CLI (`make openclaw a="..."`) and the password-login fallback, and is no longer shown on the Welcome Page. **Upgrading**: `make update` or `make restart` recreate the containers, which attaches Caddy to the new network (with `make start` the dashboard returns 502 until `make restart`); no browser needs approving again.
+
+## [1.14.0] - 2026-09-23
+
+### Added
+- **OpenClaw** - New optional `openclaw` profile that adds [OpenClaw](https://docs.openclaw.ai), a personal AI agent with a web dashboard (`OPENCLAW_HOSTNAME`) and a Telegram bot. The dashboard is behind Caddy basic auth (`OPENCLAW_USERNAME` / `OPENCLAW_PASSWORD`) and OpenClaw's own gateway password (`OPENCLAW_GATEWAY_PASSWORD`), all generated by the installer. OpenClaw's device pairing cannot be turned off, so every new browser is approved once with the new `make openclaw a="devices approve <requestId>"` passthrough. The installer asks for an optional Telegram bot token (`OPENCLAW_TELEGRAM_BOT_TOKEN`); DMs keep OpenClaw's pairing policy (`make openclaw a="pairing approve telegram <CODE>"`). A one-shot `openclaw-init` container runs on every `docker compose up` (install, `make update`, `make restart`): it copies the SSH key into a volume owned by the container user and enforces the gateway settings the stack depends on (local mode, LAN bind, password auth, allowed origin, private-range trusted proxies, and Telegram on while a token is set); the rest of the config is left to the dashboard. A failed config update does not stop the rest of the stack. The agent gets full server access by design: the image adds the Docker CLI, the Docker socket is mounted with the socket's group, and `05_configure_services.sh` authorizes a generated SSH key for the installing user (`ssh host` inside the container, using the port sshd really listens on). The key moves with the detected user and is removed from `authorized_keys` by the next install or `make update` with the profile off; the key files stay in `openclaw/ssh/`. A failed `openclaw-init` config update is reported by `make doctor`. The LLM provider is configured in the dashboard.
+
 ## [1.13.0] - 2026-09-18
 
 ### Added

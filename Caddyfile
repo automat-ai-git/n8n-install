@@ -19,6 +19,9 @@ import /etc/caddy/addons/tls-snippet.conf
 # N8N
 {$N8N_HOSTNAME} {
     import service_tls
+    # n8n serves its unauthenticated Prometheus metrics (workflow names/IDs) on
+    # the UI port. Prometheus scrapes n8n:5678 internally, so never serve them here.
+    respond /metrics* 404
     reverse_proxy n8n:5678
 }
 
@@ -49,6 +52,21 @@ import /etc/caddy/addons/tls-snippet.conf
     reverse_proxy open-webui:8080
 }
 
+# OpenClaw: basic auth is the only login. The gateway runs in trusted-proxy
+# mode and takes the user from X-Forwarded-User; header_up overwrites any value
+# the client sent, and openclaw-gateway resolves only on the private
+# openclaw-proxy network, the gateway's sole trusted proxy range. The WebSocket
+# goes through the same basic auth.
+{$OPENCLAW_HOSTNAME} {
+    import service_tls
+    basic_auth {
+        {$OPENCLAW_USERNAME} {$OPENCLAW_PASSWORD_HASH}
+    }
+    reverse_proxy openclaw-gateway:18789 {
+        header_up X-Forwarded-User {http.auth.user.id}
+    }
+}
+
 # Ollama API (Bearer token protected — for external/programmatic access)
 # Served whenever OLLAMA_HOSTNAME resolves to this server — note a wildcard
 # *.domain DNS record exposes it automatically. Every request must send
@@ -76,6 +94,12 @@ import /etc/caddy/addons/tls-snippet.conf
 {$FLOWISE_HOSTNAME} {
     import service_tls
     reverse_proxy flowise:3001
+}
+
+# Keelflow
+{$KEELFLOW_HOSTNAME} {
+    import service_tls
+    reverse_proxy keelflow:3000
 }
 
 # Dify

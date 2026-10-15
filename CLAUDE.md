@@ -36,10 +36,10 @@ This is **Selfhost AI** (repository `selfhost-ai`, formerly `n8n-install`), a Do
 - `scripts/generate_ollama_instances.sh`: Generates extra Ollama instances compose file (multi-GPU)
 - `scripts/update.sh`: Update orchestrator (syncs with origin and updates images)
 - `scripts/update_preview.sh`: Preview available updates without applying (dry-run)
+- `scripts/pull_images.sh`: Image pull without the rest of the update (pooled, then per-service retries if that fails); skips locally built services (n8n, runners, OpenClaw) and recreates nothing (used by `make pull`)
 - `scripts/doctor.sh`: System diagnostics (DNS, SSL, containers, disk, memory)
 - `scripts/apply_update.sh`: Applies updates after git sync
 - `scripts/docker_cleanup.sh`: Removes unused Docker resources (used by `make clean`)
-- `scripts/download_top_workflows.sh`: Downloads community n8n workflows
 - `scripts/import_workflows.sh`: Imports workflows from `n8n/backup/workflows/` into n8n (used by `make import`)
 - `scripts/restart.sh`: Restarts services with proper compose file handling (used by `make restart`)
 - `scripts/setup_custom_tls.sh`: Configures custom TLS certificates (used by `make setup-tls`); supports `--remove` to revert to Let's Encrypt
@@ -75,6 +75,7 @@ The update flow (`scripts/update.sh`) similarly orchestrates: git fetch + reset 
 make install           # Full installation (runs scripts/install.sh)
 make update            # Update system and services (resets to origin)
 make update-preview    # Preview available updates (dry-run)
+make pull              # Pull prebuilt images only (then make restart)
 make git-pull          # Update for forks (merges from upstream/main)
 make clean             # Remove unused Docker resources (preserves data)
 make clean-all         # Remove ALL Docker resources including data (DANGEROUS)
@@ -91,6 +92,7 @@ make doctor            # Run system diagnostics (DNS, SSL, containers, disk, mem
 make import            # Import n8n workflows from backup
 make import n=10       # Import first N workflows only
 make setup-tls         # Configure custom TLS certificates
+make openclaw a="..."  # Run an OpenClaw CLI command (e.g. a="pairing approve telegram <CODE>")
 
 make switch-beta       # Switch to develop branch and update
 make switch-stable     # Switch to main branch and update
@@ -103,7 +105,7 @@ make help              # Show all available commands
 Follow this workflow when adding a new optional service (refer to `.claude/commands/add-new-service.md` for complete details):
 
 1. **docker-compose.yml**: Add service with `profiles: ["myservice"]`, `restart: unless-stopped`. Do NOT expose ports.
-2. **Caddyfile**: Add reverse proxy block using `{$MYSERVICE_HOSTNAME}`. Consider if basic auth is needed.
+2. **Caddyfile**: Add reverse proxy block using `{$MYSERVICE_HOSTNAME}`. Consider if basic auth is needed. Add the `"myservice MYSERVICE_HOSTNAME"` pair to `DNS_PROFILE_HOSTNAMES` in `scripts/doctor.sh` so `make doctor` checks its DNS.
 3. **.env.example**: Add `MYSERVICE_HOSTNAME=myservice.yourdomain.com` and credentials if using basic auth.
 4. **scripts/03_generate_secrets.sh**: Generate passwords and bcrypt hashes. Add to `VARS_TO_GENERATE` map.
 5. **scripts/04_wizard.sh**: Add service to `base_services_data` array for wizard selection.
@@ -111,7 +113,7 @@ Follow this workflow when adding a new optional service (refer to `.claude/comma
 7. **scripts/generate_welcome_page.sh**: Add service to `SERVICES_ARRAY` for welcome dashboard.
 8. **welcome/app.js**: Add `SERVICE_METADATA` entry with name, description, icon, color, category.
 9. **scripts/07_final_report.sh**: Add service URL and credentials output using `is_profile_active "myservice"`.
-10. **README.md**: Add one-line description under "What's Included".
+10. **README.md**: Add a row to the matching category table under "What's Included". Longer setup notes go into `docs/<service>.md` (linked from the row and the "Guides" list), not into README.
 11. **CHANGELOG.md**: Add entry under `## [Unreleased]` → `### Added` (new service = minor version bump).
 
 **Always ask users if the new service requires Caddy basic auth protection.**
@@ -166,7 +168,7 @@ This project uses [Semantic Versioning](https://semver.org/). When updating `CHA
   - Runner connects to its worker via `network_mode: "service:n8n-worker-N"` (localhost:5679)
   - Runner image `n8nio/runners` must match n8n version
 - **Template profile pattern**: `docker-compose.yml` defines `n8n-worker-template` and `n8n-runner-template` with `profiles: ["n8n-template"]` (never activated directly). `generate_n8n_workers.sh` uses these as templates to generate `docker-compose.n8n-workers.yml` with the actual worker/runner services.
-- **Scaling**: Change `N8N_WORKER_COUNT` in `.env` and run `bash scripts/generate_n8n_workers.sh`
+- **Scaling**: Change `N8N_WORKER_COUNT` in `.env` and run `bash scripts/generate_n8n_workers.sh`. The generator also removes worker/runner containers above the count (`cleanup_stale_n8n_workers` in utils.sh): the rewritten compose file no longer lists them, so `down` would leave them running as orphans that keep taking queue jobs
 - **Code node libraries**: Configured via `n8n/n8n-task-runners.json` and `n8n/Dockerfile.runner`:
   - **JavaScript runner**: packages installed via `pnpm add` in Dockerfile.runner; allowlist in `n8n-task-runners.json` (`NODE_FUNCTION_ALLOW_EXTERNAL`, `NODE_FUNCTION_ALLOW_BUILTIN`); default packages: `cheerio`, `axios`, `moment`, `lodash`
   - **Python runner**: also configured in `n8n-task-runners.json`; uses `/opt/runners/task-runner-python/.venv/bin/python` with `N8N_RUNNERS_STDLIB_ALLOW: "*"` and `N8N_RUNNERS_EXTERNAL_ALLOW: "*"`
@@ -204,6 +206,15 @@ This project uses [Semantic Versioning](https://semver.org/). When updating `CHA
 - Never mount `docker.sock`: the entrypoint auto-joins the socket's group and the agent's shell would control the host daemon. The server process runs as `user` with passwordless sudo, so no `cap_drop` (apt, useradd and sudo need CHOWN/SETUID/SETGID/DAC_OVERRIDE). Provisioned per-user accounts are plain `useradd` users **without sudo**; only `OPEN_TERMINAL_MULTI_USER=false` gives the chat the sudo-capable shell, and only then are the startup package lists optional. The boundary is the network and the Open WebUI access grants. Healthcheck uses `curl` against the unauthenticated `/docs`.
 - `05_configure_services.sh` refuses a `slim`/`alpine`/`openshift` variant tag (bare or `-suffixed`) while `OPEN_TERMINAL_MULTI_USER=true`: those entrypoints ignore the multi-user and package variables, so every user would silently share one shell.
 
+### OpenClaw (`openclaw` profile)
+
+- Image built from `openclaw/Dockerfile` (`ghcr.io/openclaw/openclaw:${OPENCLAW_VERSION}` plus the static Docker CLI; the base image currently ships `openssh-client`, which `ssh host` depends on). Runs as `node` (uid 1000), state in the `openclaw_data` volume on `/home/node/.openclaw`, gateway and Control UI on `openclaw:18789`.
+- Dashboard login is Caddy basic auth only (`OPENCLAW_USERNAME` / `OPENCLAW_PASSWORD`). The gateway runs with `gateway.auth.mode=trusted-proxy`: Caddy sends `header_up X-Forwarded-User {http.auth.user.id}` to `openclaw-gateway:18789`, `trustedProxy.allowUsers` is `${OPENCLAW_USERNAME}`, and `deviceAutoApprove` (including `operator.admin`, so the owner can configure models/channels) removes the browser pairing screen. **The trust boundary is the `openclaw-proxy` network**: only caddy, openclaw and openclaw-init join it, `openclaw-gateway` is an alias on that network only, and `gateway.trustedProxies` is exactly its subnet. That subnet includes the bridge gateway (.1), i.e. the host: any process on the host, of any user, can forge the header. Accepted because the stack assumes a single-admin server whose users already have root/docker access; pin Caddy's IP to /32 if that changes. Never widen `trustedProxies` to the default network or RFC1918 ranges - every container could then become admin (root on the host). `OPENCLAW_GATEWAY_PASSWORD` is env-only, for local loopback CLI calls (`make openclaw`) and the password-login fallback; never write `gateway.auth.password` into openclaw.json. `dangerouslyDisableDeviceAuth` is retired and inert and `allowInsecureAuth` is no longer in the strict schema; do not use them.
+- `openclaw-init` (one-shot, same image, runs as root, `openclaw/init.sh`) runs on every `docker compose up`, not when Docker restarts the gateway on its own. It copies `openclaw/ssh/` into the `openclaw_ssh` volume owned by node, reads the `openclaw-proxy` subnet from its only non-loopback IPv4 interface (it joins no other network; `node -e` over `os.networkInterfaces()`, since iproute2 is not guaranteed in the base image), then as node runs `config set --batch-json` to enforce only `gateway.mode`, `gateway.bind`, `gateway.auth.mode`, `gateway.auth.trustedProxy`, `gateway.controlUi.allowedOrigins` (`https://${OPENCLAW_HOSTNAME}`, written literally and substituted by OpenClaw) and `gateway.trustedProxies`. It sets `channels.telegram.enabled=true` only while the `.env` token is set and never forces it off. If the subnet lookup fails, the trusted-proxy batch is rejected, or the container lacks `OPENCLAW_INIT_PROXY_NETWORK=true` (a pre-1.14.1 container on the default network, reused by `make start`), it switches the gateway to password auth with `trustedProxies: []` (a subnet from an earlier run may now belong to another network; as a last resort it clears only `trustedProxies`) and says which state it reached. These errors print `openclaw-init: ERROR` but exit 0, so an upstream schema change cannot abort `compose up` for the whole stack - except when not even `trustedProxies` can be cleared, where it exits 1 so the gateway (waiting on `service_completed_successfully`) does not start with a possibly stale trust; `openclaw_init_failed` (utils.sh; used by doctor, 07 and restart.sh) catches them and non-zero exits. Everything else belongs to the user in the dashboard; check the upstream schema before adding keys.
+- Telegram: `TELEGRAM_BOT_TOKEN` env fallback from `OPENCLAW_TELEGRAM_BOT_TOKEN`, long polling, default `dmPolicy: pairing`.
+- OpenRouter: `05_configure_services.sh` asks for `OPENCLAW_OPENROUTER_API_KEY` (asked like the Telegram token: visible input, only while empty in `.env`; unlike it, surrounding whitespace is trimmed, a value outside `[A-Za-z0-9_-]` is rejected because a quote would break `.env` for compose, and a missing `sk-or-` prefix warns - checked on every run, also for a reused value), passed only to the gateway (not `openclaw-init`) as `OPENROUTER_API_KEY` and never written to openclaw.json; the model stays a dashboard choice (Settings → Models → Defaults for all agents). Upstream fixes the OpenRouter OAuth callback to `http://localhost:3000` (`extensions/openrouter/oauth.ts`, no override), so the dashboard's OAuth flow cannot complete behind Caddy.
+- Full host access by design: `/var/run/docker.sock` with `group_add: OPENCLAW_DOCKER_GID` (05 writes it from `stat -c %g /var/run/docker.sock`; `group_add` has no compose default for it). `05_configure_services.sh` (root required) generates `openclaw/ssh/` (gitignored, owned by root or the installing user). Only the root `openclaw-init` bind-mounts it (read-only); the gateway gets a node-owned copy in the `openclaw_ssh` volume, because a gateway bind mount would need uid 1000 ownership on the host, which `08_fix_permissions.sh` would undo. 05 writes an `ssh host` config pointing at `host.docker.internal` with the port from `sshd -T` as the real user and authorizes the key in that user's `authorized_keys` with the `openclaw@selfhost-ai` marker (derived from the private key with `ssh-keygen -y`, so no `.pub` file is trusted). The marker line is re-added on every run after making sure the file ends with a newline, removed from the previous account when the detected user changes (`OPENCLAW_SSH_USER`), and removed by the next install / `make update` with the profile off.
+
 ### Monitoring (Prometheus + Grafana)
 
 - n8n metrics are enabled in the `x-n8n` anchor: `N8N_METRICS` plus `N8N_METRICS_INCLUDE_MESSAGE_EVENT_BUS_METRICS` / `_WORKFLOW_ID_LABEL` / `_WORKFLOW_NAME_LABEL` / `_WORKFLOW_INFO`. They expose `n8n_workflow_{started,success,failed,cancelled}_total{workflow_id,workflow_name}` and the `n8n_workflow_info` / `n8n_active_workflow_info` id-to-name gauges (leader main only). The alerts and recording rules also use `n8n_workflow_execution_duration_seconds{status,mode,workflow_id}`, which is on by default (`N8N_METRICS_INCLUDE_WORKFLOW_EXECUTION_DURATION`); turning it off silently disables them. Setting `N8N_METRICS_PREFIX` would break every panel and alert
@@ -212,6 +223,7 @@ This project uses [Semantic Versioning](https://semver.org/). When updating `CHA
 - `prometheus/rules/*.yml` holds recording rules keyed on `workflow_id` (`n8n:workflow_success:increase5m`, `n8n:workflow_last_success_timestamp_seconds`); names are joined at query time from `n8n_active_workflow_info`, so renames are followed. The whole `prometheus/` directory is bind-mounted read-only to `/etc/prometheus`
 - Grafana's datasource, dashboards and alert rules are file-provisioned from `grafana/provisioning/`; contact points and notification policies are not, and no SMTP is configured. The Prometheus datasource has the fixed `uid: Prometheus` that dashboards and alert rules reference - keep them in sync. Grafana cannot change the uid of an existing datasource, so `main.yml` deletes it by name (`deleteDatasources`) and recreates it on every start; pre-1.10.0 installations had a random uid and crash-looped without this. Use `$__rate_interval`, never a fixed range window, in range queries
 - No Alertmanager: alert rules are Grafana-managed (`grafana/provisioning/alerting/n8n-workflows.yml`); a malformed file stops Grafana from starting. `make doctor` checks that Grafana/Prometheus run, that the targets file matches `N8N_WORKER_COUNT` and that Prometheus loaded the `n8n-workflows` rule group without errors
+- **`/metrics` must never be public.** n8n serves it unauthenticated on the UI port (5678) with every workflow name and ID, so the n8n Caddy block has `respond /metrics* 404` before `reverse_proxy` - do not remove it. Prometheus scrapes `n8n:5678` over the Docker network and is unaffected. Cloudflare Tunnel bypasses Caddy, so `cloudflare-instructions.md` documents a WAF rule instead. `make doctor` requests `/metrics` from the local Caddy (`curl --resolve N8N_HOSTNAME:443:127.0.0.1`): 200 is an error, only 404 is OK, anything else warns; with `cloudflare-tunnel` active the local 000 is only info (Caddy gets no certificate for a host the tunnel routes to n8n), and it also requests the public URL: 200 error, 401/403/404 or a redirect to `*.cloudflareaccess.com` OK, a `cf-mitigated: challenge` response warns (a browser that passes the challenge still sees the metrics), anything else warns
 
 ### Caddy Reverse Proxy
 
@@ -236,7 +248,7 @@ Complex services like Supabase and Dify maintain their own upstream docker-compo
 
 The `scripts/03_generate_secrets.sh` script:
 - Generates random passwords, JWT secrets, API keys, and encryption keys
-- Creates bcrypt password hashes using Caddy's `hash-password` command
+- Creates bcrypt password hashes with `generate_bcrypt_hash` (`caddy hash-password` in a `docker run --rm` of the stack's Caddy image). Never install a Caddy package on the host: the stack's Caddy runs in Docker, the distro package's `caddy.service` takes port 80, and Caddy's Cloudsmith apt repository answers 402. Missing hashes are computed before `.env` is rewritten, so a failure leaves `.env` untouched; when any hash is missing, Docker and the image are checked before the first prompt
 - Preserves existing user-provided values in `.env`
 - Supports different secret types via `VARS_TO_GENERATE` map: `password:32`, `jwt`, `api_key`, `base64:64`, `hex:32`
 - Preserves existing values on every run; the `--update` flag passed during updates is accepted but never parsed
@@ -252,7 +264,8 @@ Key functions:
 - `update_compose_profiles "profile1,profile2"` - Update COMPOSE_PROFILES in .env
 - `remove_compose_profile "$list" "profile"` - Print a comma list without one profile (space-tolerant)
 - `gen_password 32` / `gen_hex 64` / `gen_base64 64` - Secret generation
-- `generate_bcrypt_hash "password"` - Create Caddy-compatible bcrypt hash (uses Caddy binary)
+- `generate_bcrypt_hash "password"` - Create Caddy-compatible bcrypt hash: password over stdin to `CADDY_HASH_IMAGE` (keep in sync with the `caddy` service), output validated as bcrypt
+- `remove_legacy_caddy_apt_source` - Remove the Cloudsmith Caddy apt source/key pre-1.16.4 installers added; called before `apt update` in 01 and `update.sh`, and in 03
 - `json_escape "string"` - Escape string for JSON output
 - `wt_input`, `wt_password`, `wt_yesno`, `wt_msg` - Whiptail dialog wrappers
 - `wt_checklist`, `wt_radiolist`, `wt_menu` - Whiptail selection dialogs
@@ -266,17 +279,23 @@ Key functions:
 - `cleanup_legacy_comfyui` - Remove the pre-1.13 `comfyui` container (service renamed to `comfyui-*`, container name kept) so `up` does not hit a name conflict
 - `get_n8n_workers_compose` / `get_supabase_compose` / `get_dify_compose` - Get compose file path if profile active AND file exists
 - `get_ollama_instances_compose` / `get_open_webui_postgres_compose` - Conditional compose overrides (multi-Ollama, Open WebUI on Postgres)
+- `get_neo4j_compose` - `docker-compose.neo4j.yml`, which publishes Bolt `7687` on caddy only while `neo4j` is active. Never put `7687` back into `docker-compose.yml` (Docker-published ports bypass ufw); the overlay is also listed in `restart.sh` and `start_services.py`
 - `harden_supabase_gateway_bind` - Keep the Supabase API gateway bound to loopback (issue #108)
 - `cleanup_stale_ollama_instances` - Remove Ollama instance containers above the configured count
 - `build_compose_files_array` - Build global `COMPOSE_FILES` array with all active compose files (main + external)
+- `compose_with_retry "label" ARGS...` - `docker compose -p localai ARGS` up to 3 times, 15s then 30s apart
+- `pull_images_with_retry` - Pooled `pull --ignore-buildable` over `COMPOSE_FILES`; on failure (and with Docker reachable) pulls one service at a time via `compose_with_retry` and leaves the unpulled services in global `FAILED_PULLS`. `apply_update.sh` continues when the image each of them is configured with is present locally, then runs a retried `build --pull` of the main stack; a missing image or a failed build stops the update before 06, whose `down` would otherwise leave the stack stopped when its own unretried pull/build fails. The image is read from `config --format json`, because `config --images SERVICE` also lists the images of its `depends_on` services
+- `openclaw_init_failed` - True if the last openclaw-init run exited non-zero or logged `openclaw-init: ERROR` (used by doctor, 07 and restart.sh)
 
 ### Service Profiles
 
 Common profiles:
 - `n8n`: n8n workflow automation (includes main app, worker, runner, and import services)
-- `flowise`: Flowise AI agent builder
+- `flowise`: Flowise AI agent builder (archived upstream). Image pinned to `3.1.3` in `docker-compose.yml` and `scripts/update_preview.sh` (keep both in sync): 3.1.4 crashes with SQLite and runs as non-root, which does not use the `/root/.flowise` mount. Never go back to `latest`/3.1.4; Keelflow is the upgrade path
+- `keelflow`: Keelflow, continuation of Flowise (separate service and `keelflow_data` volume; Flowise data is copied in manually, see `docs/keelflow.md`)
 - `monitoring`: Prometheus, Grafana, cAdvisor, node-exporter
 - `langfuse`: Langfuse observability (includes ClickHouse, MinIO, worker, web)
+- `minio` (langfuse) and `ragflow-minio` (ragflow) run `pgsty/silo`, a MinIO fork with the same data format and `MINIO_*` vars. The server binary is `silo` (no `minio` alias). The healthcheck curls `/minio/health/cluster`, which returns 503 until the server is ready; `/minio/health/live` answers 200 too early
 - `cpu`, `gpu-nvidia`, `gpu-amd`: Ollama hardware profiles (mutually exclusive)
 - `invokeai-nvidia`, `invokeai-amd`, `invokeai-cpu`: InvokeAI hardware profiles (mutually exclusive)
 - `comfyui-nvidia`, `comfyui-amd`, `comfyui-cpu`: ComfyUI hardware profiles (mutually exclusive; the pre-1.13 `comfyui` profile is migrated by the wizard). No `CLI_ARGS` in compose - the images ship the right default and the volume must be `/root`
@@ -286,6 +305,7 @@ Common profiles:
 - `gost`: HTTP/HTTPS proxy for routing AI service outbound traffic
 - `python-runner`: Internal Python execution environment (no external access)
 - `n8n-sandbox`: n8n Assistant code-execution sandbox (requires `n8n`; internal only, see below)
+- `openclaw`: OpenClaw AI agent with dashboard and Telegram bot; full host access (see below)
 - `open-terminal`: Open Terminal execution sandbox for Open WebUI agents (requires `open-webui`; internal only, see below)
 - `searxng`, `letta`, `lightrag`, `libretranslate`, `crawl4ai`, `docling`, `waha`, `paddleocr`, `ragapp`, `gotenberg`, `postiz`, `n8n-mcp`: Additional optional services
 
@@ -396,8 +416,7 @@ These are backed up before `git reset --hard` and restored after.
 - Verify `LETSENCRYPT_EMAIL` is set in `.env`
 
 ### Password hash generation fails
-- Ensure Caddy container is running: `docker compose -p localai up -d caddy`
-- Script uses: `docker exec caddy caddy hash-password --plaintext "$password"`
+- The hash comes from `docker run --rm -i --network none "$CADDY_HASH_IMAGE" caddy hash-password --algorithm bcrypt` (password on stdin; `CADDY_HASH_IMAGE` in `scripts/utils.sh`). The Caddy container does not need to run, but Docker must, and the image must be present or pullable. Check: `printf 'test\n' | docker run --rm -i caddy:2-alpine caddy hash-password`
 
 ## File Locations
 
@@ -405,6 +424,7 @@ These are backed up before `git reset --hard` and restored after.
 - n8n backup/workflows: `n8n/backup/workflows/` (mounted as `/backup` in n8n containers)
 - n8n storage: Docker volume `localai_n8n_storage`
 - Flowise storage: `~/.flowise` on host (mounted from user's home directory, not a named volume)
+- Keelflow storage: Docker volume `localai_keelflow_data`
 - Custom TLS certificates: `certs/` (gitignored, mounted as `/etc/caddy/certs/`)
 - Caddy addon configs: `caddy-addon/site-*.conf` (gitignored, auto-imported)
 - Service-specific volumes: Defined in `volumes:` section at top of `docker-compose.yml`
@@ -433,12 +453,14 @@ bash -n scripts/generate_n8n_workers.sh
 bash -n scripts/generate_ollama_instances.sh
 bash -n scripts/apply_update.sh
 bash -n scripts/update.sh
+bash -n scripts/pull_images.sh
 bash -n scripts/install.sh
 bash -n scripts/restart.sh
 bash -n scripts/doctor.sh
 bash -n scripts/setup_custom_tls.sh
 bash -n scripts/setup_sysbox.sh
 bash -n scripts/docker_cleanup.sh
+sh -n openclaw/init.sh
 ```
 
 ### Full Testing

@@ -414,6 +414,18 @@ get_ollama_instances_compose() {
     return 1
 }
 
+# True if the last openclaw-init run exited non-zero or logged an error. Config
+# errors still exit 0 (so the rest of the stack starts), hence the log check;
+# --since skips the output of earlier runs of the same container. False when
+# the container does not exist.
+# Usage: if openclaw_init_failed; then ...
+openclaw_init_failed() {
+    local state
+    state="$(docker inspect openclaw-init --format '{{.State.StartedAt}} {{.State.ExitCode}}' 2>/dev/null)" || return 1
+    [ "${state##* }" != "0" ] && return 0
+    docker logs --since "${state% *}" openclaw-init 2>&1 | grep -q '^openclaw-init: ERROR'
+}
+
 # Get the Open WebUI PostgreSQL override path if the open-webui profile is
 # active and OPEN_WEBUI_DATABASE is "postgres" (requires load_env first).
 # Without it, Open WebUI keeps its SQLite database in the open-webui volume.
@@ -421,6 +433,18 @@ get_ollama_instances_compose() {
 get_open_webui_postgres_compose() {
     local compose_file="$PROJECT_ROOT/docker-compose.open-webui-postgres.yml"
     if [ -f "$compose_file" ] && is_profile_active "open-webui" && [ "${OPEN_WEBUI_DATABASE:-}" = "postgres" ]; then
+        echo "$compose_file"
+        return 0
+    fi
+    return 1
+}
+
+# Get the Neo4j Bolt port override (publishes 7687 on caddy) if the neo4j
+# profile is active and the file exists (issue #134)
+# Usage: path=$(get_neo4j_compose) && COMPOSE_FILES+=("-f" "$path")
+get_neo4j_compose() {
+    local compose_file="$PROJECT_ROOT/docker-compose.neo4j.yml"
+    if [ -f "$compose_file" ] && is_profile_active "neo4j"; then
         echo "$compose_file"
         return 0
     fi
@@ -486,6 +510,11 @@ build_compose_files_array() {
     elif is_profile_active "open-webui" && [ "${OPEN_WEBUI_DATABASE:-}" = "postgres" ]; then
         log_error "OPEN_WEBUI_DATABASE=postgres but docker-compose.open-webui-postgres.yml is missing - Open WebUI will start on SQLite and appear EMPTY. Restore the file or set OPEN_WEBUI_DATABASE=sqlite in .env."
     fi
+    if path=$(get_neo4j_compose); then
+        COMPOSE_FILES+=("-f" "$path")
+    elif is_profile_active "neo4j"; then
+        log_warning "neo4j profile is active but docker-compose.neo4j.yml is missing - Bolt (7687) is NOT published, so Neo4j Browser cannot connect. Restore it with: git checkout -- docker-compose.neo4j.yml"
+    fi
     if path=$(get_supabase_compose); then
         COMPOSE_FILES+=("-f" "$path")
     fi
@@ -498,6 +527,48 @@ build_compose_files_array() {
     if [ -f "$override" ]; then
         COMPOSE_FILES+=("-f" "$override")
     fi
+}
+
+# Runs `docker compose -p localai ARGS...` up to 3 times, 15s then 30s apart; LABEL names it in the log.
+compose_with_retry() {
+    local label="$1" attempts=3 attempt
+    shift
+    for ((attempt = 1; ; attempt++)); do
+        docker compose -p localai "$@" && return 0
+        if [ "$attempt" -ge "$attempts" ]; then
+            log_error "$label failed after $attempts attempts."
+            return 1
+        fi
+        log_warning "$label failed (attempt $attempt/$attempts), retrying in $((attempt * 15))s..."
+        sleep $((attempt * 15))
+    done
+}
+
+# Pulls COMPOSE_FILES' images (build: services skipped); if the pooled pull fails (parallel pulls can time
+# out on a slow or flaky link), retries per service. Returns 1 with failures in FAILED_PULLS (empty: Docker/config error).
+pull_images_with_retry() {
+    local services svc total n=0
+    FAILED_PULLS=()
+    if docker compose -p localai "${COMPOSE_FILES[@]}" pull --ignore-buildable; then
+        return 0
+    fi
+
+    if ! docker info >/dev/null 2>&1; then
+        log_error "Docker is not reachable (daemon down or no permission for the docker socket)."
+        return 1
+    fi
+    log_warning "Pulling all images at once failed. Retrying one service at a time..."
+    if ! services=$(docker compose -p localai "${COMPOSE_FILES[@]}" config --services); then
+        log_error "Could not list services from the compose files."
+        return 1
+    fi
+    total=$(wc -l <<< "$services" | tr -d ' ')
+    for svc in $services; do
+        n=$((n + 1))
+        log_info "Pulling $svc ($n/$total)..."
+        compose_with_retry "Pull of $svc" "${COMPOSE_FILES[@]}" pull --ignore-buildable "$svc" || FAILED_PULLS+=("$svc")
+    done
+    [ ${#FAILED_PULLS[@]} -eq 0 ]
 }
 
 #=============================================================================
@@ -641,12 +712,41 @@ gen_base64() {
     openssl rand -base64 "$bytes" | head -c "$length"
 }
 
-# Generate bcrypt hash using Caddy
-# Usage: hash=$(generate_bcrypt_hash "plaintext_password")
+# Caddy image that hashes basic-auth passwords, so no Caddy package is needed on
+# the host; same tag as the stack's caddy service, so its pulled image is reused
+CADDY_HASH_IMAGE="docker.io/library/caddy:2-alpine"
+
+# Print a bcrypt hash (password over stdin, never in ps); returns 1 if Docker
+# fails or the output is not bcrypt. Usage: hash=$(generate_bcrypt_hash "pw")
 generate_bcrypt_hash() {
-    local plaintext="$1"
-    if [[ -n "$plaintext" ]]; then
-        caddy hash-password --algorithm bcrypt --plaintext "$plaintext"
+    local plaintext="$1" hash
+    local bcrypt_re='^\$2[aby]\$[0-9]{2}\$[./A-Za-z0-9]{53}$'
+    [[ -n "$plaintext" ]] || return 0
+    # --network none: hashing needs no network; the daemon still pulls a missing image
+    hash=$(printf '%s\n' "$plaintext" | docker run --rm -i --network none "$CADDY_HASH_IMAGE" \
+        caddy hash-password --algorithm bcrypt) || return 1
+    if [[ ! "$hash" =~ $bcrypt_re ]]; then
+        log_error "caddy hash-password returned no bcrypt hash (got ${#hash} characters)"
+        return 1
+    fi
+    printf '%s\n' "$hash"
+}
+
+# Installers before 1.16.4 added Caddy's Cloudsmith apt repository; it answers
+# 402 Payment Required, which makes every apt update fail until it is removed
+remove_legacy_caddy_apt_source() {
+    local f removed=false
+    for f in /etc/apt/sources.list.d/caddy-stable.list /usr/share/keyrings/caddy-stable-archive-keyring.gpg; do
+        if [[ -e "$f" ]]; then
+            if rm -f "$f"; then
+                removed=true
+            else
+                log_warning "Could not remove $f; apt update fails with 402 until it is gone: sudo rm -f $f"
+            fi
+        fi
+    done
+    if [[ "$removed" == true ]]; then
+        log_info "Removed the legacy Caddy apt repository (dl.cloudsmith.io answers 402)."
     fi
 }
 
@@ -889,6 +989,61 @@ cleanup_stale_ollama_instances() {
     fi
     if [ "$failed" -gt 0 ]; then
         log_warning "$failed stale Ollama instance container(s) could not be removed - see the errors above"
+    fi
+    return 0
+}
+
+# Remove n8n worker/runner containers above the configured count.
+# Same trap as the Ollama instances above: generate_n8n_workers.sh rewrites the
+# compose file before 'down' runs, so a worker dropped by lowering
+# N8N_WORKER_COUNT becomes an orphan - and keeps taking jobs from the queue.
+# Usage: cleanup_stale_n8n_workers <keep_count>
+cleanup_stale_n8n_workers() {
+    local keep="${1:-1}"
+    local all names name
+    local removed=0
+    local failed=0
+
+    command -v docker >/dev/null 2>&1 || return 0
+
+    if ! docker info >/dev/null 2>&1; then
+        log_warning "Docker is not reachable - skipped the check for stale n8n worker containers. Re-run 'bash scripts/generate_n8n_workers.sh' once Docker is up."
+        return 0
+    fi
+
+    # Checked on its own: a failed listing must not read as "nothing to clean"
+    if ! all="$(docker ps -a --filter "label=com.docker.compose.project=localai" --format '{{.Names}}' 2>/dev/null)"; then
+        log_warning "Could not list containers - skipped the check for stale n8n worker containers. Re-run 'bash scripts/generate_n8n_workers.sh' once Docker is up."
+        return 0
+    fi
+    # Only this stack's containers. 'sort' puts n8n-runner-* before n8n-worker-*,
+    # so each runner goes before the worker whose network namespace it shares.
+    names="$(printf '%s\n' "$all" | grep -E '^n8n-(worker|runner)-[0-9]+$' | sort)" || true
+    for name in $names; do
+        if [ "${name##*-}" -gt "$keep" ]; then
+            log_info "Removing stale n8n container: $name"
+            # SIGTERM first, like 'down': a worker finishes its running executions
+            # (n8n's default graceful shutdown is 30s); a plain 'rm -f' kills them
+            # mid-step and the queue may run them again.
+            # If the stop fails, leave it running rather than SIGKILL it with 'rm -f'
+            if ! docker stop -t 30 "$name" >/dev/null 2>&1; then
+                log_error "Failed to stop stale n8n container '$name'; left running so its executions are not killed. Remove it manually: docker stop -t 30 $name && docker rm $name"
+                failed=$((failed + 1))
+            elif docker rm "$name" >/dev/null 2>&1; then
+                removed=$((removed + 1))
+            else
+                log_error "Stopped stale n8n container '$name' but could not remove it. Remove it manually: docker rm $name"
+                failed=$((failed + 1))
+            fi
+        fi
+    done
+
+    # if/fi, not '&&': see cleanup_stale_ollama_instances
+    if [ "$removed" -gt 0 ]; then
+        log_success "Removed $removed stale n8n worker/runner container(s)"
+    fi
+    if [ "$failed" -gt 0 ]; then
+        log_warning "$failed stale n8n worker/runner container(s) could not be removed - see the errors above"
     fi
     return 0
 }

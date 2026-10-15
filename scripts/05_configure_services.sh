@@ -11,12 +11,15 @@
 #   - Number of n8n workers to run
 #   - Privileged fallback for the n8n Assistant sandbox runner when Sysbox
 #     cannot be installed (n8n-sandbox profile)
+#   - OpenClaw Telegram bot token and OpenRouter API key (if openclaw profile is active)
 #   - Cloudflare Tunnel token (if cloudflare-tunnel profile is active)
 #
 # Also handles:
 #   - Generates n8n worker-runner pairs configuration
 #   - Installs Sysbox (scripts/setup_sysbox.sh) and wires the n8n Assistant
 #     sandbox and SearXNG web search into n8n
+#   - Authorizes the OpenClaw SSH key for the real user (removed on the next
+#     install / make update after the openclaw profile is turned off)
 #   - Resolves service conflicts (e.g., removes Dify if Supabase is selected)
 #
 # Usage: bash scripts/05_configure_services.sh
@@ -268,6 +271,146 @@ fi
 # Always run, even when Ollama is not selected: this also removes a stale
 # generated file after a hardware-profile switch or after Ollama is deselected.
 bash "$SCRIPT_DIR/generate_ollama_instances.sh"
+
+
+# ----------------------------------------------------------------
+# OpenClaw (openclaw profile): Telegram bot token, host SSH key, Docker GID.
+# The container gets an SSH key authorized for the real user ('ssh host') and
+# the Docker socket. openclaw-init copies the key into a volume owned by the
+# container user, so on the host it stays with root / the installing user
+# (08_fix_permissions.sh). The authorized_keys line carries a marker: it is
+# re-added on every run, moved when the detected user changes (tracked in
+# OPENCLAW_SSH_USER) and removed on the next install / 'make update' with the
+# profile off.
+# ----------------------------------------------------------------
+OPENCLAW_SSH_DIR="$PROJECT_ROOT/openclaw/ssh"
+OPENCLAW_KEY_MARKER="openclaw@selfhost-ai"
+openclaw_user="$(get_real_user)"
+openclaw_prev_user="$(read_env_var OPENCLAW_SSH_USER)"
+
+# Remove the OpenClaw key line from a user's authorized_keys (no-op if absent)
+openclaw_unauthorize() {
+    local auth_keys
+    auth_keys="$(eval echo "~$1")/.ssh/authorized_keys"
+    if grep -qs " $OPENCLAW_KEY_MARKER\$" "$auth_keys"; then
+        sed -i "/ $OPENCLAW_KEY_MARKER\$/d" "$auth_keys"
+        log_info "Removed the OpenClaw SSH key from $auth_keys."
+    fi
+}
+
+if is_profile_active "openclaw"; then
+    log_subheader "OpenClaw"
+
+    if [ "$EUID" -ne 0 ]; then
+        # Writing another user's ~/.ssh/authorized_keys and reading sshd -T need root
+        log_error "Not running as root: cannot set up OpenClaw host access. Run 'make update' (it uses sudo) or 'sudo bash scripts/05_configure_services.sh'."
+        exit 1
+    fi
+
+    if ! docker_gid="$(stat -c %g /var/run/docker.sock 2>/dev/null)"; then
+        log_error "Docker socket /var/run/docker.sock not found: OpenClaw needs it. Is Docker running?"
+        exit 1
+    fi
+    write_env_var "OPENCLAW_DOCKER_GID" "$docker_gid"
+
+    existing_tg_token="$(read_env_var OPENCLAW_TELEGRAM_BOT_TOKEN)"
+    if [ -n "$existing_tg_token" ]; then
+        log_info "OpenClaw Telegram bot token found in .env; reusing it."
+    else
+        require_whiptail
+        input_tg_token=$(wt_input "OpenClaw Telegram Bot" "Enter the Telegram bot token from @BotFather (leave empty to skip).\n\nNew senders get a pairing code; approve it with:\nmake openclaw a=\"pairing approve telegram <CODE>\"" "") || true
+        write_env_var "OPENCLAW_TELEGRAM_BOT_TOKEN" "$input_tg_token"
+        if [ -z "$input_tg_token" ]; then
+            log_warning "No Telegram bot token in .env. Set OPENCLAW_TELEGRAM_BOT_TOKEN and run 'make restart', or configure Telegram in the dashboard."
+        fi
+    fi
+
+    # OpenRouter's OAuth in the dashboard cannot work behind the domain (its
+    # callback is fixed to localhost:3000), so the API key comes from .env
+    openrouter_key="$(sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' <<< "$(read_env_var OPENCLAW_OPENROUTER_API_KEY)")"
+    if [ -n "$openrouter_key" ]; then
+        log_info "OpenClaw OpenRouter API key found in .env; reusing it."
+    else
+        require_whiptail
+        openrouter_key=$(wt_input "OpenClaw OpenRouter" "Enter your OpenRouter API key from https://openrouter.ai/keys (leave empty to skip).\n\nThen pick an openrouter/... model in the dashboard: Settings > Models > Defaults for all agents." "") || true
+        openrouter_key="$(sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' <<< "$openrouter_key")"
+    fi
+    # A pasted quote would make .env unreadable for docker compose (whole stack);
+    # inner whitespace is rejected rather than removed, which would change the key
+    if [[ -n "$openrouter_key" && ! "$openrouter_key" =~ ^[A-Za-z0-9_-]+$ ]]; then
+        log_error "The OpenRouter API key contains characters a key cannot have (quotes or spaces?); it was not saved. Set OPENCLAW_OPENROUTER_API_KEY in .env and run 'make restart'."
+        openrouter_key=""
+    fi
+    write_env_var "OPENCLAW_OPENROUTER_API_KEY" "$openrouter_key"
+    if [ -z "$openrouter_key" ]; then
+        log_info "No OpenRouter API key set (optional). To use OpenRouter, set OPENCLAW_OPENROUTER_API_KEY in .env and run 'make restart'."
+    elif [[ "$openrouter_key" != sk-or-* ]]; then
+        log_warning "OPENCLAW_OPENROUTER_API_KEY does not start with 'sk-or-'; check it in .env if OpenRouter requests fail."
+    fi
+
+    # The agent's ssh must use the port the host sshd really listens on
+    sshd_settings="$(sshd -T 2>/dev/null)" || true
+    sshd_port="$(awk '$1 == "port" {print $2; exit}' <<< "$sshd_settings")"
+    if [ -z "$sshd_port" ]; then
+        log_warning "Could not read the sshd configuration (is openssh-server installed?); 'ssh host' assumes port 22."
+        sshd_port=22
+    fi
+
+    mkdir -p "$OPENCLAW_SSH_DIR"
+    chmod 700 "$OPENCLAW_SSH_DIR"
+    if [ ! -f "$OPENCLAW_SSH_DIR/id_ed25519" ]; then
+        ssh-keygen -q -t ed25519 -N "" -C "$OPENCLAW_KEY_MARKER" -f "$OPENCLAW_SSH_DIR/id_ed25519"
+    fi
+    cat > "$OPENCLAW_SSH_DIR/config" <<EOF
+Host host
+    HostName host.docker.internal
+    Port $sshd_port
+    User $openclaw_user
+    IdentityFile /home/node/.ssh/id_ed25519
+    StrictHostKeyChecking accept-new
+    UserKnownHostsFile /home/node/.openclaw/known_hosts
+EOF
+    chmod 600 "$OPENCLAW_SSH_DIR/id_ed25519" "$OPENCLAW_SSH_DIR/config"
+    if ! openclaw_pubkey="$(ssh-keygen -y -f "$OPENCLAW_SSH_DIR/id_ed25519" | cut -d' ' -f1,2)" || [ -z "$openclaw_pubkey" ]; then
+        log_error "Cannot derive the OpenClaw public key from openclaw/ssh/id_ed25519. Delete openclaw/ssh/ and run 'make update' again."
+        exit 1
+    fi
+
+    if [ -n "$openclaw_prev_user" ] && [ "$openclaw_prev_user" != "$openclaw_user" ]; then
+        openclaw_unauthorize "$openclaw_prev_user"
+    fi
+    openclaw_ssh_home="$(get_real_user_home)/.ssh"
+    openclaw_auth_keys="$openclaw_ssh_home/authorized_keys"
+    openclaw_group="$(id -gn "$openclaw_user")"
+    if [ ! -d "$openclaw_ssh_home" ]; then
+        install -d -m 700 -o "$openclaw_user" -g "$openclaw_group" "$openclaw_ssh_home"
+    fi
+    if [ ! -f "$openclaw_auth_keys" ]; then
+        install -m 600 -o "$openclaw_user" -g "$openclaw_group" /dev/null "$openclaw_auth_keys"
+    fi
+    sed -i "/ $OPENCLAW_KEY_MARKER\$/d" "$openclaw_auth_keys"
+    # A last line without a newline would glue our key onto the user's own key
+    # line, and the marker delete above would later remove both
+    if [ -s "$openclaw_auth_keys" ] && [ -n "$(tail -c1 "$openclaw_auth_keys")" ]; then
+        echo >> "$openclaw_auth_keys"
+    fi
+    echo "$openclaw_pubkey $OPENCLAW_KEY_MARKER" >> "$openclaw_auth_keys"
+    write_env_var "OPENCLAW_SSH_USER" "$openclaw_user"
+
+    if [ "$openclaw_user" = "root" ]; then
+        log_warning "OpenClaw can reach this server as ROOT via 'ssh host' (the installer could not detect a non-root user)."
+        if grep -qx "permitrootlogin no" <<< "$sshd_settings"; then
+            log_warning "sshd has 'PermitRootLogin no', so 'ssh host' will be refused. Run 'make update' via sudo from a regular user instead."
+        fi
+    else
+        log_info "OpenClaw can reach this server as '$openclaw_user' via 'ssh host' (port $sshd_port)."
+    fi
+else
+    openclaw_unauthorize "$openclaw_user"
+    if [ -n "$openclaw_prev_user" ] && [ "$openclaw_prev_user" != "$openclaw_user" ]; then
+        openclaw_unauthorize "$openclaw_prev_user"
+    fi
+fi
 
 
 # ----------------------------------------------------------------

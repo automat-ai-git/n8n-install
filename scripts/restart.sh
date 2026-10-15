@@ -13,6 +13,7 @@
 #   - docker-compose.invokeai-gpu-devices.yml (if invokeai-nvidia profile active and INVOKEAI_GPU_DEVICES set)
 #   - docker-compose.comfyui-gpu-devices.yml (if comfyui-nvidia profile active and COMFYUI_GPU_DEVICES set)
 #   - docker-compose.open-webui-postgres.yml (if open-webui profile active and OPEN_WEBUI_DATABASE=postgres)
+#   - docker-compose.neo4j.yml (if exists and neo4j profile active; publishes the Bolt port on caddy)
 #   - supabase/docker/docker-compose.yml (if exists and supabase profile active)
 #   - dify/docker/docker-compose.yaml (if exists and dify profile active)
 #   - docker-compose.override.yml (if exists, user overrides with highest precedence)
@@ -136,6 +137,11 @@ elif is_profile_active "open-webui" && [ "${OPEN_WEBUI_DATABASE:-}" = "postgres"
     # record it here so the closing line cannot claim an unqualified success.
     DEGRADED=1
 fi
+if path=$(get_neo4j_compose); then
+    MAIN_COMPOSE_FILES+=("-f" "$path")
+elif is_profile_active "neo4j"; then
+    DEGRADED=1
+fi
 OVERRIDE_COMPOSE="$PROJECT_ROOT/docker-compose.override.yml"
 if [ -f "$OVERRIDE_COMPOSE" ]; then
     MAIN_COMPOSE_FILES+=("-f" "$OVERRIDE_COMPOSE")
@@ -143,7 +149,19 @@ fi
 
 # Start main services
 log_info "Starting main services..."
-docker compose -p "$PROJECT_NAME" "${MAIN_COMPOSE_FILES[@]}" up -d
+UP_STATUS=0
+docker compose -p "$PROJECT_NAME" "${MAIN_COMPOSE_FILES[@]}" up -d || UP_STATUS=$?
+
+# openclaw-init exits 0 on config errors, so surface them here too - also when
+# 'up' failed, which a failed openclaw-init itself causes
+if is_profile_active "openclaw" && openclaw_init_failed; then
+    log_warning "openclaw-init failed: OpenClaw may be on password login (OPENCLAW_GATEWAY_PASSWORD from .env) or not started. See 'make logs s=openclaw-init'."
+    DEGRADED=1
+fi
+if [ "$UP_STATUS" -ne 0 ]; then
+    log_error "Starting the main services failed (exit $UP_STATUS) - see the output above."
+    exit "$UP_STATUS"
+fi
 
 if [ "$DEGRADED" -eq 0 ]; then
     log_success "Services restarted successfully!"

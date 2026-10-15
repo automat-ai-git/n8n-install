@@ -100,7 +100,13 @@ fi
 # Check other common services
 if is_profile_active "flowise"; then
     log_subheader "Flowise"
-    check_image_update "flowise" "flowiseai/flowise:latest"
+    # Pinned tag; keep in sync with docker-compose.yml (see the comment there)
+    check_image_update "flowise" "flowiseai/flowise:3.1.3"
+fi
+
+if is_profile_active "keelflow"; then
+    log_subheader "Keelflow"
+    check_image_update "keelflow" "ghcr.io/perruer/keelflow:latest"
 fi
 
 if is_profile_active "open-webui"; then
@@ -186,9 +192,8 @@ if [ $UPDATES_AVAILABLE -gt 0 ]; then
     echo -e "  ${WHITE}To apply updates, run:${NC}"
     echo -e "    ${CYAN}make update${NC}"
     echo ""
-    echo -e "  ${DIM}Or manually:${NC}"
-    echo -e "    ${DIM}docker compose -p localai pull${NC}"
-    echo -e "    ${DIM}docker compose -p localai up -d${NC}"
+    echo -e "  ${DIM}Or only the prebuilt images (n8n and OpenClaw are rebuilt by make update):${NC}"
+    echo -e "    ${DIM}make pull && make restart${NC}"
 else
     echo -e "  ${BRIGHT_GREEN}All images are up to date!${NC}"
 fi

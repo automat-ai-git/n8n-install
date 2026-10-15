@@ -8,7 +8,7 @@
 #
 # Open WebUI does NOT migrate data between backends - switching an existing
 # install gives you an empty Open WebUI while the old chats stay in webui.db
-# inside the open-webui volume. See the README before changing
+# inside the open-webui volume. See docs/open-webui-postgres.md before changing
 # OPEN_WEBUI_DATABASE on a running installation.
 #
 # The 'openwebui' database is created by scripts/databases.sh before any

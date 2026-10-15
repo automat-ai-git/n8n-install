@@ -64,6 +64,16 @@ if is_profile_active "flowise"; then
     }")
 fi
 
+# Keelflow
+if is_profile_active "keelflow"; then
+    SERVICES_ARRAY+=("    \"keelflow\": {
+      \"hostname\": \"$(json_escape "$KEELFLOW_HOSTNAME")\",
+      \"credentials\": {
+        \"note\": \"Create your account on first login\"
+      }
+    }")
+fi
+
 # Open WebUI
 if is_profile_active "open-webui"; then
     SERVICES_ARRAY+=("    \"open-webui\": {
@@ -427,6 +437,27 @@ if is_profile_active "open-terminal"; then
     }")
 fi
 
+# OpenClaw (basic auth is the only login; trusted-proxy mode)
+if is_profile_active "openclaw"; then
+    openclaw_model_hint="Pick a model in Settings > Models > Defaults for all agents."
+    if [ -n "${OPENCLAW_OPENROUTER_API_KEY:-}" ]; then
+        openclaw_model_hint+=" OpenRouter is connected via .env: pick an openrouter/... model."
+    else
+        openclaw_model_hint+=" To use OpenRouter, set OPENCLAW_OPENROUTER_API_KEY in .env and run 'make restart'."
+    fi
+    SERVICES_ARRAY+=("    \"openclaw\": {
+      \"hostname\": \"$(json_escape "$OPENCLAW_HOSTNAME")\",
+      \"credentials\": {
+        \"username\": \"$(json_escape "$OPENCLAW_USERNAME")\",
+        \"password\": \"$(json_escape "$OPENCLAW_PASSWORD")\"
+      },
+      \"extra\": {
+        \"recommendation\": \"$(json_escape "$openclaw_model_hint") Telegram senders: make openclaw a=\\\"pairing approve telegram <CODE>\\\". Full server access via 'ssh host' and Docker.\",
+        \"docs\": \"https://docs.openclaw.ai\"
+      }
+    }")
+fi
+
 # Crawl4AI (internal only)
 if is_profile_active "crawl4ai"; then
     SERVICES_ARRAY+=("    \"crawl4ai\": {
@@ -577,11 +608,18 @@ done
 declare -a QUICK_START_ARRAY
 STEP_NUM=1
 
-# Step 1: Log into primary service (n8n or Flowise)
+# Step 1: Log into primary service (n8n, Keelflow or Flowise)
 if is_profile_active "n8n"; then
     QUICK_START_ARRAY+=("    {
       \"step\": $STEP_NUM,
       \"title\": \"Log into n8n\",
+      \"description\": \"Create your account on first login\"
+    }")
+    ((STEP_NUM++))
+elif is_profile_active "keelflow"; then
+    QUICK_START_ARRAY+=("    {
+      \"step\": $STEP_NUM,
+      \"title\": \"Log into Keelflow\",
       \"description\": \"Create your account on first login\"
     }")
     ((STEP_NUM++))
@@ -611,6 +649,16 @@ if is_profile_active "n8n-mcp" && [ -z "${N8N_API_KEY:-}" ]; then
       \"step\": $STEP_NUM,
       \"title\": \"Unlock n8n-MCP workflow tools\",
       \"description\": \"Create an API key in n8n (Settings > n8n API), set N8N_API_KEY in .env, then run 'make restart'\"
+    }")
+    ((STEP_NUM++))
+fi
+
+# OpenClaw needs a model before it can answer (dashboard or Telegram)
+if is_profile_active "openclaw"; then
+    QUICK_START_ARRAY+=("    {
+      \"step\": $STEP_NUM,
+      \"title\": \"Set up OpenClaw\",
+      \"description\": \"Log in and pick a model in Settings > Models > Defaults for all agents\"
     }")
     ((STEP_NUM++))
 fi

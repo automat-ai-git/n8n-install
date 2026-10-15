@@ -6,6 +6,7 @@ volumes:
   docling_cache:
   flowise:
   grafana:
+  keelflow_data:
   langfuse_clickhouse_data:
   langfuse_clickhouse_logs:
   langfuse_minio_data:
@@ -23,6 +24,8 @@ volumes:
   ollama_storage:
   open-webui:
   open_terminal_home:
+  openclaw_data:
+  openclaw_ssh:
   paddle_cache:
   paddleocr_cache:
   paddlex_data:
@@ -40,6 +43,15 @@ volumes:
   valkey-data:
   uptime_kuma_data:
   weaviate_data:
+
+# Private link between Caddy and the OpenClaw gateway. Only caddy, openclaw and
+# openclaw-init join it: OpenClaw trusts the identity header only from this
+# subnet (openclaw/init.sh), so containers on the default network cannot
+# impersonate the user. The host holds the subnet's gateway address and is
+# trusted too, so any host process could - accepted for single-admin servers,
+# see openclaw/init.sh.
+networks:
+  openclaw-proxy:
 
 # Shared logging configuration for services
 x-logging: &default-logging
@@ -235,7 +247,10 @@ services:
       start_period: 120s
 
   flowise:
-    image: flowiseai/flowise
+    # Pinned: 3.1.4 crashes at startup with SQLite ("this.db.exec is not a
+    # function") and runs as 'node', ignoring the /root/.flowise mount.
+    # Keep in sync with scripts/update_preview.sh.
+    image: flowiseai/flowise:3.1.3
     restart: unless-stopped
     container_name: flowise
     profiles: ["flowise"]
@@ -247,6 +262,26 @@ services:
     volumes:
       - ~/.flowise:/root/.flowise
     entrypoint: /bin/sh -c "sleep 3; flowise start"
+
+  keelflow:
+    image: ghcr.io/perruer/keelflow:latest
+    restart: unless-stopped
+    container_name: keelflow
+    profiles: ["keelflow"]
+    logging: *default-logging
+    environment:
+      <<: *proxy-env
+      KEELFLOW_HOME: /home/node/.keelflow
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - keelflow_data:/home/node/.keelflow
+    healthcheck:
+      test: ["CMD-SHELL", "http_proxy= https_proxy= HTTP_PROXY= HTTPS_PROXY= curl -fsS http://localhost:3000/api/v1/ping || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
 
   # ---------------------------------------------------------------------------
   # Open Terminal (profile "open-terminal") - execution environment for Open WebUI
@@ -313,6 +348,101 @@ services:
       timeout: 10s
       retries: 5
       start_period: 120s
+
+  # ---------------------------------------------------------------------------
+  # OpenClaw (profile "openclaw") - personal AI agent with the Control UI and a
+  # Telegram bot. The dashboard sits behind Caddy basic auth only: the gateway runs in
+  # trusted-proxy mode, Caddy passes the basic-auth user in X-Forwarded-User over
+  # the private openclaw-proxy network, and browsers are auto-approved, so there
+  # is no second password and no device pairing screen. openclaw-init (see
+  # openclaw/init.sh) copies the SSH key and enforces the gateway keys on every
+  # 'compose up'. OPENCLAW_GATEWAY_PASSWORD is only for the local CLI
+  # ('make openclaw a="..."') and init.sh's password-login fallback.
+  # FULL HOST ACCESS BY DESIGN: docker.sock (root-equivalent) plus an SSH key
+  # that 05_configure_services.sh authorizes for the installing user
+  # ('ssh host' inside the container). Anyone who passes the OpenClaw basic
+  # auth or is approved in Telegram controls the server; keep the Telegram DM
+  # policy on pairing or an allowlist.
+  # ---------------------------------------------------------------------------
+  openclaw-init:
+    build: &openclaw-build
+      context: ./openclaw
+      pull: true
+      args:
+        OPENCLAW_VERSION: "${OPENCLAW_VERSION:-latest}"
+    image: localai-openclaw
+    container_name: openclaw-init
+    profiles: ["openclaw"]
+    restart: "no"
+    logging: *default-logging
+    user: "0:0"
+    entrypoint: ["sh", "/openclaw-init.sh"]
+    # Same values as the gateway: 'config set' validates the whole config,
+    # including the ${OPENCLAW_HOSTNAME} / ${OPENCLAW_USERNAME} references and,
+    # on the password-login fallback, the gateway password.
+    # TELEGRAM_BOT_TOKEN decides whether init.sh switches the channel on.
+    # OPENROUTER_API_KEY is gateway-only: init.sh writes no reference to it into
+    # openclaw.json (a hand-added ${OPENROUTER_API_KEY} reference would need it here too).
+    environment:
+      OPENCLAW_GATEWAY_PASSWORD: "${OPENCLAW_GATEWAY_PASSWORD}"
+      OPENCLAW_HOSTNAME: "${OPENCLAW_HOSTNAME:-openclaw.localhost}"
+      OPENCLAW_USERNAME: "${OPENCLAW_USERNAME}"
+      TELEGRAM_BOT_TOKEN: "${OPENCLAW_TELEGRAM_BOT_TOKEN:-}"
+      # Marks this container as attached to openclaw-proxy only; init.sh refuses
+      # to trust its own subnet without it (a stale pre-1.14.1 container).
+      OPENCLAW_INIT_PROXY_NETWORK: "true"
+    # Only the proxy network: init.sh reads that network's subnet from its own
+    # interface and makes it the gateway's only trusted proxy range.
+    networks:
+      - openclaw-proxy
+    volumes:
+      - ./openclaw/init.sh:/openclaw-init.sh:ro
+      - ./openclaw/ssh:/ssh-src:ro
+      - openclaw_data:/home/node/.openclaw
+      - openclaw_ssh:/home/node/.ssh
+
+  openclaw:
+    build: *openclaw-build
+    image: localai-openclaw
+    container_name: openclaw
+    profiles: ["openclaw"]
+    restart: unless-stopped
+    logging: *default-logging
+    init: true
+    command: ["node", "dist/index.js", "gateway", "--bind", "lan", "--port", "18789"]
+    environment:
+      <<: *proxy-env
+      OPENCLAW_GATEWAY_PASSWORD: "${OPENCLAW_GATEWAY_PASSWORD}"
+      OPENCLAW_HOSTNAME: "${OPENCLAW_HOSTNAME:-openclaw.localhost}"
+      OPENCLAW_USERNAME: "${OPENCLAW_USERNAME}"
+      OPENROUTER_API_KEY: "${OPENCLAW_OPENROUTER_API_KEY:-}"
+      TELEGRAM_BOT_TOKEN: "${OPENCLAW_TELEGRAM_BOT_TOKEN:-}"
+      TZ: "${GENERIC_TIMEZONE:-UTC}"
+    # Caddy reaches the gateway as openclaw-gateway, an alias that exists only on
+    # openclaw-proxy, so its requests always come from the trusted subnet.
+    networks:
+      default:
+      openclaw-proxy:
+        aliases:
+          - openclaw-gateway
+    # GID of /var/run/docker.sock, written by 05_configure_services.sh
+    group_add:
+      - "${OPENCLAW_DOCKER_GID}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - openclaw_data:/home/node/.openclaw
+      - openclaw_ssh:/home/node/.ssh:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD-SHELL", "http_proxy= https_proxy= HTTP_PROXY= HTTPS_PROXY= node dist/docker-healthcheck.js || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    depends_on:
+      openclaw-init:
+        condition: service_completed_successfully
 
   n8n-import:
     <<: *service-n8n
@@ -619,10 +749,14 @@ services:
   caddy:
     container_name: caddy
     image: docker.io/library/caddy:2-alpine
+    networks:
+      - default
+      - openclaw-proxy
     ports:
       - "80:80"
       - "443:443"
-      - "7687:7687"
+    # Bolt (7687) is published by docker-compose.neo4j.yml, only while the
+    # neo4j profile is active (issue #134) - do not add it back here.
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -648,6 +782,7 @@ services:
       INVOKEAI_HOSTNAME: "${INVOKEAI_HOSTNAME}"
       INVOKEAI_PASSWORD_HASH: "${INVOKEAI_PASSWORD_HASH}"
       INVOKEAI_USERNAME: "${INVOKEAI_USERNAME}"
+      KEELFLOW_HOSTNAME: "${KEELFLOW_HOSTNAME}"
       LANGFUSE_HOSTNAME: "${LANGFUSE_HOSTNAME}"
       LETSENCRYPT_EMAIL: "${LETSENCRYPT_EMAIL:-internal}"
       LETTA_HOSTNAME: "${LETTA_HOSTNAME}"
@@ -667,6 +802,10 @@ services:
       NOCODB_HOSTNAME: "${NOCODB_HOSTNAME}"
       OLLAMA_HOSTNAME: "${OLLAMA_HOSTNAME}"
       OLLAMA_CADDY_API_TOKEN: "${OLLAMA_CADDY_API_TOKEN}"
+      # Defaulted for the same reason as N8N_MCP_HOSTNAME above.
+      OPENCLAW_HOSTNAME: "${OPENCLAW_HOSTNAME:-openclaw.localhost}"
+      OPENCLAW_PASSWORD_HASH: "${OPENCLAW_PASSWORD_HASH}"
+      OPENCLAW_USERNAME: "${OPENCLAW_USERNAME}"
       PADDLEOCR_HOSTNAME: "${PADDLEOCR_HOSTNAME}"
       PADDLEOCR_PASSWORD_HASH: "${PADDLEOCR_PASSWORD_HASH}"
       PADDLEOCR_USERNAME: "${PADDLEOCR_USERNAME}"
@@ -831,20 +970,23 @@ services:
       start_period: 1s
 
   minio:
-    image: quay.io/minio/minio:latest
+    # Silo: maintained MinIO fork with the same data format and MINIO_* vars
+    # (quay.io/minio/minio rejects anonymous pulls). The server binary is
+    # 'silo', with no 'minio' alias. Not the 'distroless' tag: it has no sh/curl.
+    image: docker.io/pgsty/silo:latest
     container_name: minio
     restart: always
     profiles: ["langfuse"]
     entrypoint: sh
     # create the 'langfuse' bucket before starting the service
-    command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
+    command: -c 'mkdir -p /data/langfuse && silo server --address ":9000" --console-address ":9001" /data'
     environment:
       MINIO_ROOT_USER: minio
       MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD}"
     volumes:
       - langfuse_minio_data:/data
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/cluster"]
       interval: 1s
       timeout: 5s
       retries: 5
@@ -1067,13 +1209,15 @@ services:
     profiles: ["crawl4ai"]
     restart: unless-stopped
     shm_size: 1g # Recommended for browser operations
-    env_file:
-      - .env
+    # No 'env_file: .env' here: it would hand every secret of the stack to the
+    # crawler. Pass the variables it needs explicitly.
     environment:
       <<: *proxy-env
       # Without a token Crawl4AI 0.9+ binds 127.0.0.1 only and is unreachable
       # from other containers; with it the API listens on the Docker network.
       CRAWL4AI_API_TOKEN: "${CRAWL4AI_API_TOKEN}"
+      # Key for the default LLM provider (openai/gpt-4o-mini).
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
     deploy:
       resources:
         limits:
@@ -1469,17 +1613,18 @@ services:
       - ragflow_mysql_data:/var/lib/mysql
 
   ragflow-minio:
-    image: quay.io/minio/minio:latest
+    # Silo (MinIO fork), see the 'minio' service above
+    image: docker.io/pgsty/silo:latest
     container_name: ragflow-minio
     profiles: ["ragflow"]
     restart: unless-stopped
     entrypoint: sh
-    command: -c 'mkdir -p /data/ragflow && minio server --address ":9000" --console-address ":9001" /data'
+    command: -c 'mkdir -p /data/ragflow && silo server --address ":9000" --console-address ":9001" /data'
     environment:
       MINIO_ROOT_USER: minio
       MINIO_ROOT_PASSWORD: "${RAGFLOW_MINIO_ROOT_PASSWORD}"
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/cluster"]
       interval: 5s
       timeout: 5s
       retries: 10

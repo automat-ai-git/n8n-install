@@ -26,6 +26,7 @@ import /etc/caddy/addons/tls-snippet.conf
 # In each service block
 {$N8N_HOSTNAME} {
     import service_tls    # <-- Uses the snippet
+    respond /metrics* 404
     reverse_proxy n8n:5678
 }
 ```

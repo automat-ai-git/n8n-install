@@ -3,7 +3,8 @@
 # prometheus/targets/n8n.json with the scrape targets for n8n main and the workers
 # Usage: N8N_WORKER_COUNT=3 bash scripts/generate_n8n_workers.sh
 #
-# Idempotent: with the n8n profile active both files are rewritten from scratch.
+# Idempotent: with the n8n profile active both files are rewritten from scratch
+# and worker/runner containers above the count are removed.
 # With the profile inactive only the targets file is removed - the compose file
 # stays because start_services.py uses its presence to stop leftover workers.
 
@@ -100,3 +101,7 @@ if ! { mkdir -p "$(dirname "$TARGETS_FILE")" && echo "$targets_json" > "$TARGETS
 fi
 
 log_info "Generated $TARGETS_FILE (n8n main + $N8N_WORKER_COUNT worker target(s))"
+
+# Drop workers above the new count - a plain 'docker compose down' leaves them
+# behind as orphans that keep processing queue jobs.
+cleanup_stale_n8n_workers "$N8N_WORKER_COUNT"

@@ -118,6 +118,7 @@ After DNS is configured, go to **Cloudflare One Dashboard** → **Networks** →
 | **Flowise**        | flowise.yourdomain.com        | `http://flowise:3001`        | Built-in login      |
 | **Grafana**        | grafana.yourdomain.com        | `http://grafana:3000`        | Built-in login      |
 | **InvokeAI**       | invokeai.yourdomain.com       | `http://invokeai:9090`       | ⚠️ Loses Caddy auth  |
+| **Keelflow**       | keelflow.yourdomain.com       | `http://keelflow:3000`       | Built-in login      |
 | **Langfuse**       | langfuse.yourdomain.com       | `http://langfuse-web:3000`   | Built-in login      |
 | **Letta**          | letta.yourdomain.com          | `http://letta:8283`          | No auth             |
 | **LibreTranslate** | libretranslate.yourdomain.com | `http://libretranslate:5000` | ⚠️ Loses Caddy auth  |
@@ -145,6 +146,7 @@ After DNS is configured, go to **Cloudflare One Dashboard** → **Networks** →
 **⚠️ Security Warning:**
 - Services marked **"Loses Caddy auth"** have basic authentication via Caddy that is bypassed by the tunnel. Use [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/applications/) or keep them internal.
 - Services marked **"No auth"** have no protection at all - always use Cloudflare Access for these.
+- **n8n `/metrics`** is unauthenticated and lists every workflow name and ID. Caddy blocks it, but the route above (`http://n8n:5678`) skips Caddy, so add the "Block n8n metrics" expression from [Protecting n8n Webhooks with WAF Rules](#protecting-n8n-webhooks-with-waf-rules) as a custom rule with action Block (Prometheus scrapes n8n internally and is not affected). `make doctor` checks this through the public hostname.
 - Services with **"Built-in login"** have their own authentication and are generally safe to expose.
 - Services with **"API key recommended"** should be configured with API keys in their settings.
 
@@ -228,6 +230,7 @@ n8n webhooks need special consideration because they must be publicly accessible
 | Protect UI, allow webhooks           | `(http.host eq "n8n.yourdomain.com" and not ip.src in $approved_ip_addresses and not http.request.uri.path contains "/webhook/")` | Block             |
 | Restrict webhooks to services        | `(http.host eq "n8n.yourdomain.com" and http.request.uri.path contains "/webhook/" and not ip.src in $webhook_allowed_ips)`       | Block             |
 | Challenge suspicious webhook traffic | `(http.host eq "n8n.yourdomain.com" and http.request.uri.path contains "/webhook/")`                                              | Managed Challenge |
+| Block n8n metrics                    | `(http.host eq "n8n.yourdomain.com" and starts_with(lower(http.request.uri.path), "/metrics"))`                                   | Block             |
 
 #### Common Security Rule Patterns
 

@@ -143,19 +143,19 @@ else
     # ------------------------------------------------------------------------
     DOCKERD_ARGS="$(ps -o args= -C dockerd 2>/dev/null || true)"
     if grep -qE -- '(^|[[:space:]])(-b|--bridge|--bip|--default-address-pool|--fixed-cidr)([= ]|$)' <<< "$DOCKERD_ARGS"; then
-        fail "dockerd runs with -b/--bridge/--bip/--default-address-pool/--fixed-cidr flags; install Sysbox manually (see README)."
+        fail "dockerd runs with -b/--bridge/--bip/--default-address-pool/--fixed-cidr flags; install Sysbox manually (see docs/n8n-assistant-sandbox.md)."
     fi
     if [ -s "$DOCKER_DAEMON_JSON" ]; then
         jq -e 'type == "object"' "$DOCKER_DAEMON_JSON" >/dev/null 2>&1 \
             || fail "$DOCKER_DAEMON_JSON is not a valid JSON object; fix it first."
         if jq -e 'has("bridge") or has("fixed-cidr") or has("fixed-cidr-v6") or .ipv6 == true' "$DOCKER_DAEMON_JSON" >/dev/null; then
-            fail "$DOCKER_DAEMON_JSON has a custom bridge/fixed-cidr/ipv6 setup; install Sysbox manually (see README)."
+            fail "$DOCKER_DAEMON_JSON has a custom bridge/fixed-cidr/ipv6 setup; install Sysbox manually (see docs/n8n-assistant-sandbox.md)."
         fi
     fi
     # dockerd is running (checked above), so with the default network setup
     # docker0 exists and has an address. Anything else is a custom setup.
     DOCKER0_CIDR="$(ip -4 -o addr show docker0 2>/dev/null | awk '{print $4}' | head -n1 || true)"
-    [ -n "$DOCKER0_CIDR" ] || fail "the docker0 bridge is missing or has no IPv4 address (custom -b/--bridge setup?); install Sysbox manually (see README)."
+    [ -n "$DOCKER0_CIDR" ] || fail "the docker0 bridge is missing or has no IPv4 address (custom -b/--bridge setup?); install Sysbox manually (see docs/n8n-assistant-sandbox.md)."
 
     # ------------------------------------------------------------------------
     # Download and verify the package before anything on the host is modified

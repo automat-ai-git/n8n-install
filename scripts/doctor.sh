@@ -165,6 +165,15 @@ if is_profile_active "n8n-sandbox"; then
     fi
 fi
 
+# OpenClaw: openclaw-init reports failures only in its log (see utils.sh)
+if is_profile_active "openclaw" && docker inspect openclaw-init &> /dev/null; then
+    if openclaw_init_failed; then
+        count_error "openclaw-init failed - OpenClaw login through Caddy alone is not active (password login or unconfigured). See 'make logs s=openclaw-init'."
+    else
+        count_ok "openclaw-init applied the OpenClaw gateway settings"
+    fi
+fi
+
 # Check disk space
 log_subheader "Disk Space"
 
@@ -281,7 +290,12 @@ check_dns() {
     local hostname="$1"
     local varname="$2"
 
-    if [ -z "$hostname" ] || [ "$hostname" == "yourdomain.com" ] || [[ "$hostname" == *".yourdomain.com" ]]; then
+    if [ -z "$hostname" ]; then
+        count_warning "$varname is not set"
+        return
+    fi
+    if [ "$hostname" == "yourdomain.com" ] || [[ "$hostname" == *".yourdomain.com" ]]; then
+        count_warning "$varname still uses the yourdomain.com placeholder ($hostname)"
         return
     fi
 
@@ -292,12 +306,59 @@ check_dns() {
     fi
 }
 
+# "profile HOSTNAME_VAR" for every profile-gated Caddy site block (Welcome is
+# checked unconditionally below). Add new services here too.
+DNS_PROFILE_HOSTNAMES=(
+    "appsmith APPSMITH_HOSTNAME"
+    "comfyui-amd COMFYUI_HOSTNAME"
+    "comfyui-cpu COMFYUI_HOSTNAME"
+    "comfyui-nvidia COMFYUI_HOSTNAME"
+    "cpu OLLAMA_HOSTNAME"
+    "databasus DATABASUS_HOSTNAME"
+    "dify DIFY_HOSTNAME"
+    "docling DOCLING_HOSTNAME"
+    "flowise FLOWISE_HOSTNAME"
+    "gpu-amd OLLAMA_HOSTNAME"
+    "gpu-nvidia OLLAMA_HOSTNAME"
+    "invokeai-amd INVOKEAI_HOSTNAME"
+    "invokeai-cpu INVOKEAI_HOSTNAME"
+    "invokeai-nvidia INVOKEAI_HOSTNAME"
+    "keelflow KEELFLOW_HOSTNAME"
+    "langfuse LANGFUSE_HOSTNAME"
+    "letta LETTA_HOSTNAME"
+    "libretranslate LT_HOSTNAME"
+    "lightrag LIGHTRAG_HOSTNAME"
+    "monitoring GRAFANA_HOSTNAME"
+    "monitoring PROMETHEUS_HOSTNAME"
+    "n8n N8N_HOSTNAME"
+    "n8n-mcp N8N_MCP_HOSTNAME"
+    "neo4j NEO4J_HOSTNAME"
+    "nocodb NOCODB_HOSTNAME"
+    "open-webui WEBUI_HOSTNAME"
+    "openclaw OPENCLAW_HOSTNAME"
+    "paddleocr PADDLEOCR_HOSTNAME"
+    "portainer PORTAINER_HOSTNAME"
+    "postiz POSTIZ_HOSTNAME"
+    "postiz TEMPORAL_UI_HOSTNAME"
+    "qdrant QDRANT_HOSTNAME"
+    "ragapp RAGAPP_HOSTNAME"
+    "ragflow RAGFLOW_HOSTNAME"
+    "searxng SEARXNG_HOSTNAME"
+    "supabase SUPABASE_HOSTNAME"
+    "uptime-kuma UPTIME_KUMA_HOSTNAME"
+    "waha WAHA_HOSTNAME"
+    "weaviate WEAVIATE_HOSTNAME"
+)
+
 # Only check if we have a real domain
-if [ -n "$USER_DOMAIN_NAME" ] && [ "$USER_DOMAIN_NAME" != "yourdomain.com" ]; then
-    check_dns "$N8N_HOSTNAME" "N8N_HOSTNAME"
-    check_dns "$GRAFANA_HOSTNAME" "GRAFANA_HOSTNAME"
-    check_dns "$PORTAINER_HOSTNAME" "PORTAINER_HOSTNAME"
+if ! command -v host &> /dev/null; then
+    count_warning "'host' command not found (apt install bind9-host) - DNS checks skipped"
+elif [ -n "$USER_DOMAIN_NAME" ] && [ "$USER_DOMAIN_NAME" != "yourdomain.com" ]; then
     check_dns "$WELCOME_HOSTNAME" "WELCOME_HOSTNAME"
+    for entry in "${DNS_PROFILE_HOSTNAMES[@]}"; do
+        read -r profile varname <<< "$entry"
+        is_profile_active "$profile" && check_dns "${!varname}" "$varname"
+    done
 else
     print_info "Skipping DNS checks (no domain configured)"
 fi
@@ -313,6 +374,49 @@ if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "caddy"; then
         count_ok "Caddyfile is valid"
     else
         count_warning "Caddyfile validation failed (may be fine if using default)"
+    fi
+
+    # n8n's /metrics leaks workflow names/IDs and must stay internal (issue #132).
+    # --resolve asks the local Caddy, bypassing DNS: 200 means exposed, the
+    # Caddyfile block answers 404, anything else is inconclusive.
+    if is_profile_active "n8n" && [ -n "$N8N_HOSTNAME" ] && [[ "$N8N_HOSTNAME" != *"yourdomain.com" ]]; then
+        METRICS_CODE=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 10 \
+            --resolve "$N8N_HOSTNAME:443:127.0.0.1" "https://$N8N_HOSTNAME/metrics")
+        case "$METRICS_CODE" in
+            200) count_error "n8n /metrics is served by Caddy on $N8N_HOSTNAME (leaks workflow names/IDs). Update the Caddyfile and run 'make restart'." ;;
+            404) count_ok "n8n /metrics is blocked by Caddy on $N8N_HOSTNAME" ;;
+            000)
+                # A tunnel route straight to n8n:5678 means Caddy never gets a
+                # certificate for this host; the tunnel check below covers it.
+                if is_profile_active "cloudflare-tunnel"; then
+                    print_info "Caddy has no TLS for $N8N_HOSTNAME (expected if the tunnel routes n8n directly) - checking via the tunnel"
+                else
+                    count_warning "No TLS response from Caddy for $N8N_HOSTNAME (certificate not issued yet?) - n8n /metrics exposure not checked"
+                fi ;;
+            *)   count_warning "n8n /metrics returned HTTP ${METRICS_CODE:-none} via Caddy (expected 404) - is n8n up and the Caddyfile current?" ;;
+        esac
+        # The documented tunnel route (http://n8n:5678) skips Caddy, so ask
+        # through the public hostname too. A Cloudflare challenge is not a block:
+        # a browser that passes it still gets the metrics.
+        if is_profile_active "cloudflare-tunnel"; then
+            METRICS_RESP=$(curl -s -o /dev/null -D - --max-time 10 \
+                -w '\n%{http_code} %{redirect_url}' "https://$N8N_HOSTNAME/metrics")
+            read -r METRICS_CODE METRICS_REDIRECT <<< "${METRICS_RESP##*$'\n'}"
+            if grep -qi '^cf-mitigated: *challenge' <<< "$METRICS_RESP"; then
+                count_warning "Cloudflare challenged the request to $N8N_HOSTNAME/metrics - a browser that passes it may still see the metrics. Add the WAF Block rule from cloudflare-instructions.md."
+            else
+                case "$METRICS_CODE" in
+                    200) count_error "n8n /metrics is public via Cloudflare Tunnel on $N8N_HOSTNAME. Add the WAF rule from cloudflare-instructions.md." ;;
+                    401|403|404) count_ok "n8n /metrics is not public on $N8N_HOSTNAME (HTTP $METRICS_CODE)" ;;
+                    3??) if [[ "$METRICS_REDIRECT" == https://*.cloudflareaccess.com/* ]]; then
+                             count_ok "n8n /metrics on $N8N_HOSTNAME is behind Cloudflare Access"
+                         else
+                             count_warning "https://$N8N_HOSTNAME/metrics redirects to ${METRICS_REDIRECT:-nowhere} - exposure via Cloudflare Tunnel not confirmed"
+                         fi ;;
+                    *)   count_warning "https://$N8N_HOSTNAME/metrics returned HTTP ${METRICS_CODE:-none} (expected 403/404) - exposure via Cloudflare Tunnel not confirmed" ;;
+                esac
+            fi
+        fi
     fi
 else
     count_warning "Caddy container is not running"
@@ -366,6 +470,16 @@ check_service "caddy" "80"
 
 if is_profile_active "n8n"; then
     check_service "n8n" "5678"
+    # A running worker above N8N_WORKER_COUNT still takes queue jobs. Either the
+    # compose file is stale ('make restart' does not regenerate it after a .env
+    # change) or the worker is an orphan the generator's cleanup could not remove.
+    if [[ "${N8N_WORKER_COUNT:-1}" =~ ^[1-9][0-9]*$ ]]; then
+        for name in $(docker ps --filter "label=com.docker.compose.project=localai" --format '{{.Names}}' 2>/dev/null | grep -E '^n8n-worker-[0-9]+$'); do
+            if [ "${name##*-}" -gt "${N8N_WORKER_COUNT:-1}" ]; then
+                count_warning "$name is running but N8N_WORKER_COUNT=${N8N_WORKER_COUNT:-1} - it still processes queue jobs. Run 'bash scripts/generate_n8n_workers.sh'."
+            fi
+        done
+    fi
 fi
 
 # Extra Ollama instances. Not via check_service: that helper assumes the
