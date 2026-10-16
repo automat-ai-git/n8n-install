@@ -40,8 +40,14 @@ if [[ -d "$PROJECT_ROOT" ]]; then
     # its PGDATA (supabase/docker/volumes/db/data) must NOT be chowned to the host
     # user - otherwise Postgres backends fail with "could not open file
     # global/pg_filenode.map: Permission denied" and PostgREST stays unhealthy.
+    # Neo4j (neo4j:latest) runs as uid 7474 and bind-mounts ./neo4j/data and
+    # ./neo4j/logs, which it writes to; chowning them to the host user breaks
+    # checkpoint rotation and crash-loops the container. config/plugins are only
+    # read by neo4j, so they can stay host-owned. (fork)
     find "$PROJECT_ROOT" \
         -path "$PROJECT_ROOT/supabase/docker/volumes/db/data" -prune -o \
+        -path "$PROJECT_ROOT/neo4j/data" -prune -o \
+        -path "$PROJECT_ROOT/neo4j/logs" -prune -o \
         -exec chown "$REAL_USER:$REAL_GROUP" {} +
 
     # Ensure .env has restricted permissions (readable only by owner)
