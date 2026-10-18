@@ -254,6 +254,14 @@ services:
      volumes:
        - *meeting-data
 
+   temporal:
+     # Temporal объявил temporalio/auto-setup deprecated и убрал тег :latest из
+     # Docker Hub (версионные теги живы). Пин на последнюю feature-линию 1.29.7;
+     # схема temporal мигрируется только вперёд, а DB новее быть не может (1.30+
+     # у auto-setup нет) — безопасно. upstream всё ещё на :latest (не пофикшено).
+     # Долгосрочно Temporal рекомендует temporalio/server+admin-tools — отдельная миграция.
+     image: temporalio/auto-setup:1.29.7
+
    prometheus:
      command:
        - '--config.file=/etc/prometheus/prometheus.yml'
