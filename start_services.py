@@ -409,7 +409,12 @@ def remove_legacy_supabase_kong():
         capture_output=True, text=True,
     )
     if inspect.returncode != 0:
-        return
+        # Only a missing container is fine; any other error could leave Kong on port 8000
+        if "No such" in inspect.stderr:
+            return
+        print(f"ERROR: could not check for a leftover supabase-kong container: {inspect.stderr.strip()}. "
+              "Nothing was stopped; fix Docker and run the same command again.")
+        raise SystemExit(1)
     owner = inspect.stdout.strip()
     if owner != "localai/kong":
         print(f"WARNING: a supabase-kong container from another project ({owner}) exists; "

@@ -1070,7 +1070,12 @@ cleanup_legacy_postgresus() {
 cleanup_legacy_supabase_kong() {
     local container_name="supabase-kong"
     local labels
-    labels=$(docker inspect --format '{{ index .Config.Labels "com.docker.compose.project" }}/{{ index .Config.Labels "com.docker.compose.service" }}' "$container_name" 2>/dev/null) || return 0
+    if ! labels=$(docker inspect --format '{{ index .Config.Labels "com.docker.compose.project" }}/{{ index .Config.Labels "com.docker.compose.service" }}' "$container_name" 2>&1); then
+        # Only a missing container is fine; any other error could leave Kong on port 8000
+        [[ "$labels" == *"No such"* ]] && return 0
+        log_error "Could not check for a leftover supabase-kong container: $labels"
+        return 1
+    fi
     if [ "$labels" = "localai/kong" ]; then
         log_info "Found the old Supabase Kong gateway container, removing it so Envoy can bind port 8000..."
         # Failing here, under the caller's set -e, stops it before 'down' while the stack still runs
