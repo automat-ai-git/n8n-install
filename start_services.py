@@ -402,23 +402,25 @@ def remove_legacy_supabase_kong():
     No compose file lists it any more, so 'down' leaves it holding port 8000. Runs after the
     Supabase git pull and before 'down', so a failed pull or removal leaves the running stack as it is.
     """
-    inspect = subprocess.run(
-        ["docker", "inspect", "--format",
-         '{{ index .Config.Labels "com.docker.compose.project" }}/{{ index .Config.Labels "com.docker.compose.service" }}',
-         "supabase-kong"],
+    # Decided by the exit code, never by Docker's error wording
+    listing = subprocess.run(
+        ["docker", "ps", "-a", "--filter", "name=supabase-kong", "--format",
+         '{{.Names}}\t{{.Label "com.docker.compose.project"}}/{{.Label "com.docker.compose.service"}}'],
         capture_output=True, text=True,
     )
-    if inspect.returncode != 0:
-        # Only a missing container is fine; any other error could leave Kong on port 8000
-        if "No such" in inspect.stderr:
-            return
-        print(f"ERROR: could not check for a leftover supabase-kong container: {inspect.stderr.strip()}. "
+    if listing.returncode != 0:
+        print(f"ERROR: could not check for a leftover supabase-kong container: {listing.stderr.strip()}. "
               "Nothing was stopped; fix Docker and run the same command again.")
         raise SystemExit(1)
-    owner = inspect.stdout.strip()
+    # The name filter also matches substrings
+    owners = [labels for name, _, labels in (line.partition("\t") for line in listing.stdout.splitlines())
+              if name == "supabase-kong"]
+    if not owners:
+        return
+    owner = owners[0]
     if owner != "localai/kong":
-        print(f"WARNING: a supabase-kong container from another project ({owner}) exists; "
-              "if it holds port 8000, Supabase's Envoy gateway cannot start.")
+        print(f"WARNING: a supabase-kong container not created by this stack ({owner if owner != '/' else 'no Compose labels'}) "
+              "exists; if it holds port 8000, Supabase's Envoy gateway cannot start.")
         return
     print("Removing the old Supabase Kong gateway container so Envoy can bind port 8000...")
     try:

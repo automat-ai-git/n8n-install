@@ -1069,13 +1069,15 @@ cleanup_legacy_postgresus() {
 # Usage: cleanup_legacy_supabase_kong
 cleanup_legacy_supabase_kong() {
     local container_name="supabase-kong"
-    local labels
-    if ! labels=$(docker inspect --format '{{ index .Config.Labels "com.docker.compose.project" }}/{{ index .Config.Labels "com.docker.compose.service" }}' "$container_name" 2>&1); then
-        # Only a missing container is fine; any other error could leave Kong on port 8000
-        [[ "$labels" == *"No such"* ]] && return 0
-        log_error "Could not check for a leftover supabase-kong container: $labels"
+    local listing labels
+    # Decided by the exit code, never by Docker's error wording; stderr stays out of the labels
+    if ! listing=$(docker ps -a --filter "name=$container_name" --format '{{.Names}}'$'\t''{{.Label "com.docker.compose.project"}}/{{.Label "com.docker.compose.service"}}'); then
+        log_error "Could not check for a leftover supabase-kong container (see the Docker error above)."
         return 1
     fi
+    # The name filter also matches substrings
+    labels=$(awk -F'\t' -v n="$container_name" '$1 == n {print $2; exit}' <<< "$listing")
+    [ -z "$labels" ] && return 0
     if [ "$labels" = "localai/kong" ]; then
         log_info "Found the old Supabase Kong gateway container, removing it so Envoy can bind port 8000..."
         # Failing here, under the caller's set -e, stops it before 'down' while the stack still runs
@@ -1085,7 +1087,8 @@ cleanup_legacy_supabase_kong() {
         fi
         log_success "Legacy supabase-kong container removed."
     else
-        log_warning "A supabase-kong container from another project ($labels) exists; if it holds port 8000, Supabase's Envoy gateway cannot start."
+        [ "$labels" = "/" ] && labels="no Compose labels"
+        log_warning "A supabase-kong container not created by this stack ($labels) exists; if it holds port 8000, Supabase's Envoy gateway cannot start."
     fi
 }
 
