@@ -141,6 +141,7 @@ declare -A VARS_TO_GENERATE=(
     ["TEMPORAL_UI_PASSWORD"]="password:32" # Temporal UI basic auth password
     ["VAULT_ENC_KEY"]="alphanum:32"
     ["WAHA_DASHBOARD_PASSWORD"]="password:32"
+    ["WEBUI_SECRET_KEY"]="hex:64" # Open WebUI JWT signing key, also derives its MFA encryption key
     ["WEAVIATE_API_KEY"]="secret:48" # API Key for Weaviate service (36 bytes -> 48 chars base64)
     ["WELCOME_PASSWORD"]="password:32" # Welcome page basic auth password
     ["WHATSAPP_SWAGGER_PASSWORD"]="password:32"
@@ -360,6 +361,45 @@ if [[ -z "${existing_env_vars[OPEN_WEBUI_DATABASE]}" ]]; then
         generated_values["OPEN_WEBUI_DATABASE"]="postgres"
     fi
 fi
+
+# On upgrade, copy the key the existing Open WebUI container uses into .env before 'down' removes it
+# (it lived in the container layer). An unreadable key or Docker stops here; no container means a new key.
+if [[ -z "${existing_env_vars[WEBUI_SECRET_KEY]}" && ${#existing_env_vars[@]} -gt 0 ]]; then
+    WEBUI_KEY_LOST_HINT="Set WEBUI_SECRET_KEY in .env by hand and re-run; the current key is in /app/backend/.webui_secret_key inside the open-webui container. If it is lost, any new random value works: users sign in again, and with MFA enrolled the stored MFA secrets must be cleared (see the 1.18.0 entry in CHANGELOG.md)."
+    # A failed inspect cannot tell a missing container from an unreachable daemon
+    if ! docker info >/dev/null 2>&1; then
+        log_error "Docker is not reachable, so the Open WebUI secret key cannot be read from the open-webui container. Start Docker and re-run."
+        exit 1
+    fi
+    if docker container inspect open-webui >/dev/null 2>&1; then
+        webui_key=$(docker container inspect open-webui --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^WEBUI_SECRET_KEY=//p')
+        if [[ -z "$webui_key" ]]; then
+            webui_key_file=$(mktemp)
+            TEMP_FILES+=("$webui_key_file")
+            if ! docker cp open-webui:/app/backend/.webui_secret_key "$webui_key_file" >/dev/null; then
+                log_error "Could not read the Open WebUI secret key from the open-webui container. $WEBUI_KEY_LOST_HINT"
+                exit 1
+            fi
+            webui_key=$(< "$webui_key_file")
+            rm -f "$webui_key_file"
+        fi
+        if ! [[ "$webui_key" =~ ^[A-Za-z0-9+/=_-]+$ ]]; then
+            log_error "The open-webui container's secret key has an unexpected format and cannot be written to .env as is. $WEBUI_KEY_LOST_HINT"
+            exit 1
+        fi
+        generated_values["WEBUI_SECRET_KEY"]="$webui_key"
+        log_info "Copied the Open WebUI secret key from the open-webui container into .env (WEBUI_SECRET_KEY)."
+    elif [[ ",${existing_env_vars[COMPOSE_PROFILES]// /}," == *",open-webui,"* ]]; then
+        log_warning "open-webui is enabled but its container no longer exists, so its secret key is gone. A new WEBUI_SECRET_KEY is generated: users sign in again, and with MFA enrolled the stored MFA secrets must be cleared (see the 1.18.0 entry in CHANGELOG.md)."
+    fi
+fi
+
+# IMGPROXY_ENABLE_WEBP_DETECTION was renamed upstream to IMGPROXY_AUTO_WEBP
+if [[ -z "${existing_env_vars[IMGPROXY_AUTO_WEBP]}" && -n "${existing_env_vars[IMGPROXY_ENABLE_WEBP_DETECTION]}" ]]; then
+    generated_values["IMGPROXY_AUTO_WEBP"]="${existing_env_vars[IMGPROXY_ENABLE_WEBP_DETECTION]}"
+fi
+# The old name is no longer read by anything; keep it out of the preserved section
+unset 'existing_env_vars[IMGPROXY_ENABLE_WEBP_DETECTION]'
 
 # Create a temporary file for processing
 TMP_ENV_FILE=$(mktemp)

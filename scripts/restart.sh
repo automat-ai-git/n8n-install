@@ -32,10 +32,18 @@ cd "$PROJECT_ROOT"
 # Load environment to check active profiles
 load_env
 
+# Only the installer ('make update') copies the Open WebUI key into .env, and 'down' would destroy
+# it (everyone signed out; with MFA enrolled Open WebUI no longer starts), so stop first.
+if is_profile_active "open-webui" && [ -z "${WEBUI_SECRET_KEY:-}" ]; then
+    log_error "WEBUI_SECRET_KEY is empty - restarting would replace the Open WebUI secret key (everyone signed out; with MFA enrolled Open WebUI no longer starts). Run 'make update' instead: it copies the current key into .env."
+    exit 1
+fi
+
 # Keep the Supabase API gateway bound to loopback (issue #108). restart.sh runs
 # neither 03_generate_secrets.sh nor prepare_supabase_env(), so the documented
 # 'git pull' + 'make restart' path needs this explicitly.
 harden_supabase_gateway_bind
+cleanup_legacy_supabase_kong
 
 PROJECT_NAME="localai"
 

@@ -426,9 +426,9 @@ fi
 # Docker publishes ports in the nat table, BEFORE ufw's INPUT chain, so a
 # 0.0.0.0 bind is reachable from the internet even with 'ufw default deny
 # incoming'. Everything in this stack is meant to be reached through Caddy.
-if is_profile_active "supabase"; then
-    log_subheader "Exposed Ports"
+log_subheader "Exposed Ports"
 
+if is_profile_active "supabase"; then
     GW_NAME=$(docker ps --filter 'name=^supabase-envoy$' --filter 'name=^supabase-kong$' \
                         --format '{{.Names}}' 2>/dev/null)
     GW_PORTS=$(docker ps --filter 'name=^supabase-envoy$' --filter 'name=^supabase-kong$' \
@@ -444,6 +444,43 @@ if is_profile_active "supabase"; then
     else
         count_ok "Supabase API gateway is not exposed on all interfaces"
     fi
+fi
+
+# Every other running container, e.g. the Supabase pooler or Dify's nginx. Caddy's 80/443 (and
+# 7687 with neo4j) are intended; with supabase active the gateway has its own check.
+CADDY_PORTS=" 80 443 "
+is_profile_active "neo4j" && CADDY_PORTS+="7687 "
+SKIP_CONTAINERS=" "
+is_profile_active "supabase" && SKIP_CONTAINERS+="supabase-envoy supabase-kong "
+ALL_INTERFACES_RE='^(0\.0\.0\.0|::|\[::\]):([0-9-]+)->'
+EXPOSED_FOUND=0
+if ! CONTAINER_PORTS=$(docker ps --format '{{.Names}}'$'\t''{{.Ports}}' 2>/dev/null); then
+    count_warning "Could not list containers - exposed ports not checked"
+    EXPOSED_FOUND=1  # suppresses the OK line below
+fi
+while IFS=$'\t' read -r name ports; do
+    if [[ -z "$name" || "$SKIP_CONTAINERS" == *" $name "* ]]; then
+        continue
+    fi
+    exposed=()
+    IFS=', ' read -ra mappings <<< "$ports"
+    for mapping in "${mappings[@]}"; do
+        [[ "$mapping" =~ $ALL_INTERFACES_RE ]] || continue
+        host_port="${BASH_REMATCH[2]}"
+        if [[ "$name" == "caddy" && "$CADDY_PORTS" == *" $host_port "* ]]; then
+            continue
+        fi
+        exposed+=("$host_port")
+    done
+    if [ ${#exposed[@]} -gt 0 ]; then
+        EXPOSED_FOUND=1
+        # IPv4 and IPv6 list the same port twice
+        exposed_list=$(printf '%s\n' "${exposed[@]}" | sort -u | paste -sd, -)
+        count_warning "$name publishes port(s) $exposed_list on all interfaces - reachable from the internet despite ufw. See docs/security.md"
+    fi
+done <<< "$CONTAINER_PORTS"
+if [ "$EXPOSED_FOUND" -eq 0 ]; then
+    count_ok "No container publishes ports on all interfaces besides Caddy"
 fi
 
 # Check key services
