@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [1.18.1] - 2026-10-19
+
+### Fixed
+- **Installer** - `make update`, `make restart` and the installer stopped in 1.18.0 with `could not check for a leftover supabase-kong container: error: no such object: supabase-kong` on hosts whose Docker words a missing container in lower case (as Docker 29.2.1 does), also without the `supabase` profile. The leftover Kong check parsed Docker's error message; it now lists containers with `docker ps -a` and decides by the exit code and the exact container name, so a missing container is no longer mistaken for a Docker error and an unreachable Docker is no longer mistaken for a missing container. The failed run exited before taking anything down: on an existing install the stack kept running, so just run `make update` (or the installer) again.
+
 ## [1.18.0] - 2026-10-19
 
 ### Added
