@@ -277,7 +277,7 @@ Key functions:
 - `get_real_user` / `get_real_user_home` - Get actual user even under sudo
 - `backup_preserved_dirs` / `restore_preserved_dirs` - Directory preservation for git updates
 - `cleanup_legacy_n8n_workers` - Remove old n8n worker containers from previous naming convention
-- `cleanup_legacy_supabase_kong` - Remove the `supabase-kong` container (labels `localai/kong`) left running after Supabase moved its gateway to Envoy; it holds port 8000. Called next to `harden_supabase_gateway_bind` in 06 and `restart.sh`
+- `cleanup_legacy_supabase_kong` - Remove the `supabase-kong` container (labels `localai/kong`) left running after Supabase moved its gateway to Envoy; it holds port 8000. Called by `restart.sh`; install and `make update` use `remove_legacy_supabase_kong()` in `start_services.py`, after the Supabase `git pull` and before `down`, so a failed pull or removal leaves the running stack untouched (the Envoy image itself is still pulled only by Supabase's own `up`)
 - `cleanup_legacy_comfyui` - Remove the pre-1.13 `comfyui` container (service renamed to `comfyui-*`, container name kept) so `up` does not hit a name conflict
 - `get_n8n_workers_compose` / `get_supabase_compose` / `get_dify_compose` - Get compose file path if profile active AND file exists
 - `get_ollama_instances_compose` / `get_open_webui_postgres_compose` - Conditional compose overrides (multi-Ollama, Open WebUI on Postgres)

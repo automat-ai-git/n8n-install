@@ -396,6 +396,33 @@ def prepare_postiz_env():
 
     print(f"Generated postiz.env with {len(env_vars)} variables.")
 
+def remove_legacy_supabase_kong():
+    """Remove the supabase-kong container Supabase replaced with Envoy.
+
+    No compose file lists it any more, so 'down' leaves it holding port 8000. Runs after the
+    Supabase git pull and before 'down', so a failed pull or removal leaves the running stack as it is.
+    """
+    inspect = subprocess.run(
+        ["docker", "inspect", "--format",
+         '{{ index .Config.Labels "com.docker.compose.project" }}/{{ index .Config.Labels "com.docker.compose.service" }}',
+         "supabase-kong"],
+        capture_output=True, text=True,
+    )
+    if inspect.returncode != 0:
+        return
+    owner = inspect.stdout.strip()
+    if owner != "localai/kong":
+        print(f"WARNING: a supabase-kong container from another project ({owner}) exists; "
+              "if it holds port 8000, Supabase's Envoy gateway cannot start.")
+        return
+    print("Removing the old Supabase Kong gateway container so Envoy can bind port 8000...")
+    try:
+        run_command(["docker", "rm", "-f", "supabase-kong"])
+    except subprocess.CalledProcessError:
+        print("ERROR: could not remove supabase-kong, which holds port 8000. Nothing was stopped; "
+              "remove it manually with 'docker rm -f supabase-kong' and run the same command again.")
+        raise SystemExit(1)
+
 def stop_existing_containers():
     """Stop and remove existing containers for our unified project ('localai')."""
     print("Stopping and removing existing containers for the unified project 'localai'...")
@@ -690,6 +717,7 @@ def main():
     # Generate Postiz env file
     prepare_postiz_env()
 
+    remove_legacy_supabase_kong()
     stop_existing_containers()
     
     # Start Supabase first

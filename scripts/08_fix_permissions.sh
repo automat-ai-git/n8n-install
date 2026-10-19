@@ -44,6 +44,7 @@ for dir in db/data mysql/data redis/data app/storage plugin_daemon sandbox/depen
 done
 
 if [[ -d "$PROJECT_ROOT" ]]; then
+    SUPABASE_REPAIR_FAILED=0
     # Backstop for Supabase Postgres data an earlier run gave the host user: recreating supabase-db
     # fixes it, a running one keeps failing until then. A symlinked data directory is left alone.
     if [[ -d "$SUPABASE_DB_DATA" && ! -L "$SUPABASE_DB_DATA" ]] && \
@@ -55,6 +56,7 @@ if [[ -d "$PROJECT_ROOT" ]]; then
             log_success "Supabase Postgres data ownership restored. Auth, REST and Realtime reconnect on their own (Docker restarts them)."
         else
             log_error "Could not restore $SUPABASE_DB_DATA - Supabase auth, REST and Realtime keep failing until its files belong to uid $pg_uid (chown -R $pg_uid, chmod 700 on the directory)."
+            SUPABASE_REPAIR_FAILED=1
         fi
     fi
 
@@ -75,6 +77,10 @@ if [[ -d "$PROJECT_ROOT" ]]; then
     chmod +x "$SCRIPT_DIR"/*.sh 2>/dev/null || true
     chmod +x "$PROJECT_ROOT"/*.py 2>/dev/null || true
 
+    # The rest of the project is fixed either way; the failed repair still makes this script exit 1.
+    if [[ $SUPABASE_REPAIR_FAILED -eq 1 ]]; then
+        exit 1
+    fi
     log_success "File permissions fixed successfully!"
 else
     log_error "Project root not found: $PROJECT_ROOT"

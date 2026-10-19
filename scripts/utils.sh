@@ -1065,7 +1065,7 @@ cleanup_legacy_postgresus() {
 }
 
 # Remove the supabase-kong container Supabase replaced with Envoy: no compose file lists it, so 'down'
-# leaves it holding port 8000. Runs whatever gateway the checkout has: callers run before it is pulled.
+# leaves it holding port 8000. For the restart path, which never pulls the checkout; the installer has its own.
 # Usage: cleanup_legacy_supabase_kong
 cleanup_legacy_supabase_kong() {
     local container_name="supabase-kong"
@@ -1073,7 +1073,7 @@ cleanup_legacy_supabase_kong() {
     labels=$(docker inspect --format '{{ index .Config.Labels "com.docker.compose.project" }}/{{ index .Config.Labels "com.docker.compose.service" }}' "$container_name" 2>/dev/null) || return 0
     if [ "$labels" = "localai/kong" ]; then
         log_info "Found the old Supabase Kong gateway container, removing it so Envoy can bind port 8000..."
-        # Failing here, under the callers' set -e, stops them before 'down' while the stack still runs
+        # Failing here, under the caller's set -e, stops it before 'down' while the stack still runs
         if ! docker rm -f "$container_name" >/dev/null; then
             log_error "Could not remove supabase-kong; it still holds port 8000 and Supabase would not start. Remove it manually: docker rm -f $container_name"
             return 1
