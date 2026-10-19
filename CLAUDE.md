@@ -31,7 +31,7 @@ This is **Selfhost AI** (repository `selfhost-ai`, formerly `n8n-install`), a Do
 - `scripts/telemetry.sh`: Anonymous telemetry functions (Scarf integration)
 - `scripts/06_run_services.sh`: Starts Docker Compose stack
 - `scripts/07_final_report.sh`: Post-install credential summary
-- `scripts/08_fix_permissions.sh`: Fixes file ownership for non-root access
+- `scripts/08_fix_permissions.sh`: Fixes file ownership for non-root access. Skips the container-written data directories under `supabase/docker/volumes` (`db/data`, `storage`) and `dify/docker/volumes` (default stack plus every optional vector store's data; `CONTAINER_OWNED_DIRS`; supabase/postgres cannot read its data as the host user) and, as a backstop, gives Supabase Postgres files back to the uid `supabase-db` reports
 - `scripts/generate_n8n_workers.sh`: Generates dynamic worker/runner compose file and the Prometheus n8n targets file
 - `scripts/generate_ollama_instances.sh`: Generates extra Ollama instances compose file (multi-GPU)
 - `scripts/update.sh`: Update orchestrator (syncs with origin and updates images)
@@ -250,6 +250,7 @@ The `scripts/03_generate_secrets.sh` script:
 - Generates random passwords, JWT secrets, API keys, and encryption keys
 - Creates bcrypt password hashes with `generate_bcrypt_hash` (`caddy hash-password` in a `docker run --rm` of the stack's Caddy image). Never install a Caddy package on the host: the stack's Caddy runs in Docker, the distro package's `caddy.service` takes port 80, and Caddy's Cloudsmith apt repository answers 402. Missing hashes are computed before `.env` is rewritten, so a failure leaves `.env` untouched; when any hash is missing, Docker and the image are checked before the first prompt
 - Preserves existing user-provided values in `.env`
+- `WEBUI_SECRET_KEY` (Open WebUI JWT key, also derives its MFA encryption key) is generated here and passed to `open-webui`; on upgrade an empty value is first copied from the existing container (its env, else `/app/backend/.webui_secret_key` via `docker cp`; 03 runs before `down`), and an unreachable Docker, a container whose key cannot be read or a key in an unexpected format stops 03 with exit 1 (before `.env` is rewritten). `restart.sh` exits 1 while `open-webui` is active and the key is empty. Never add `MFA_ENCRYPTION_KEY` by default: MFA secrets enrolled before it existed would no longer decrypt and Open WebUI refuses to start
 - Supports different secret types via `VARS_TO_GENERATE` map: `password:32`, `jwt`, `api_key`, `base64:64`, `hex:32`
 - Preserves existing values on every run; the `--update` flag passed during updates is accepted but never parsed
 
@@ -276,10 +277,11 @@ Key functions:
 - `get_real_user` / `get_real_user_home` - Get actual user even under sudo
 - `backup_preserved_dirs` / `restore_preserved_dirs` - Directory preservation for git updates
 - `cleanup_legacy_n8n_workers` - Remove old n8n worker containers from previous naming convention
+- `cleanup_legacy_supabase_kong` - Remove the `supabase-kong` container (labels `localai/kong`) left running after Supabase moved its gateway to Envoy; it holds port 8000. Called next to `harden_supabase_gateway_bind` in 06 and `restart.sh`
 - `cleanup_legacy_comfyui` - Remove the pre-1.13 `comfyui` container (service renamed to `comfyui-*`, container name kept) so `up` does not hit a name conflict
 - `get_n8n_workers_compose` / `get_supabase_compose` / `get_dify_compose` - Get compose file path if profile active AND file exists
 - `get_ollama_instances_compose` / `get_open_webui_postgres_compose` - Conditional compose overrides (multi-Ollama, Open WebUI on Postgres)
-- `get_neo4j_compose` - `docker-compose.neo4j.yml`, which publishes Bolt `7687` on caddy only while `neo4j` is active. Never put `7687` back into `docker-compose.yml` (Docker-published ports bypass ufw); the overlay is also listed in `restart.sh` and `start_services.py`
+- `get_neo4j_compose` - `docker-compose.neo4j.yml`, which publishes Bolt `7687` on caddy only while `neo4j` is active. Never put `7687` back into `docker-compose.yml` (Docker-published ports bypass ufw); the overlay is also listed in `restart.sh` and `start_services.py`, and `make doctor`'s exposed-ports check allows 7687 on caddy only with `neo4j` (`CADDY_PORTS` in `doctor.sh`; a new Caddy-published port needs adding there)
 - `harden_supabase_gateway_bind` - Keep the Supabase API gateway bound to loopback (issue #108)
 - `cleanup_stale_ollama_instances` - Remove Ollama instance containers above the configured count
 - `build_compose_files_array` - Build global `COMPOSE_FILES` array with all active compose files (main + external)
@@ -292,6 +294,7 @@ Key functions:
 Common profiles:
 - `n8n`: n8n workflow automation (includes main app, worker, runner, and import services)
 - `flowise`: Flowise AI agent builder (archived upstream). Image pinned to `3.1.3` in `docker-compose.yml` and `scripts/update_preview.sh` (keep both in sync): 3.1.4 crashes with SQLite and runs as non-root, which does not use the `/root/.flowise` mount. Never go back to `latest`/3.1.4; Keelflow is the upgrade path
+- `ragflow`: RAGFlow, image pinned to `v0.27.2` in `docker-compose.yml` and `scripts/update_preview.sh` (keep both in sync): `latest` moved to 1.0 release candidates, which need kvrocks (and NATS) the stack does not provide
 - `keelflow`: Keelflow, continuation of Flowise (separate service and `keelflow_data` volume; Flowise data is copied in manually, see `docs/keelflow.md`)
 - `monitoring`: Prometheus, Grafana, cAdvisor, node-exporter
 - `langfuse`: Langfuse observability (includes ClickHouse, MinIO, worker, web)

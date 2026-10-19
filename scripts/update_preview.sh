@@ -109,6 +109,12 @@ if is_profile_active "keelflow"; then
     check_image_update "keelflow" "ghcr.io/perruer/keelflow:latest"
 fi
 
+if is_profile_active "ragflow"; then
+    log_subheader "RAGFlow"
+    # Pinned tag; keep in sync with the compose file
+    check_image_update "ragflow" "infiniflow/ragflow:v0.27.2"
+fi
+
 if is_profile_active "open-webui"; then
     log_subheader "Open WebUI"
     check_image_update "open-webui" "ghcr.io/open-webui/open-webui:main"
