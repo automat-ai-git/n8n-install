@@ -338,6 +338,8 @@ services:
     environment:
       <<: *proxy-env
       OLLAMA_BASE_URL: http://ollama:11434
+      # Without it the key lives in the container layer and changes on every recreate
+      WEBUI_SECRET_KEY: "${WEBUI_SECRET_KEY:-}"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -1561,7 +1563,9 @@ services:
         condition: service_healthy
 
   ragflow:
-    image: infiniflow/ragflow:latest
+    # Pinned: 'latest' moved to 1.0 release candidates, which need kvrocks (and NATS)
+    # the stack does not provide. Keep the tag in sync with the update preview.
+    image: infiniflow/ragflow:v0.27.2
     container_name: ragflow
     profiles: ["ragflow"]
     restart: unless-stopped

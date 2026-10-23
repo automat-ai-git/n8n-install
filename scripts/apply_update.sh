@@ -101,7 +101,7 @@ build_compose_files_array
 # needs the registry happens here first, with retries, and a failure stops the update while the stack runs.
 abort_before_restart() {
     # 03 rewrote .env as root; give it back so the non-sudo 'make pull' can read it
-    bash "$SCRIPT_DIR/08_fix_permissions.sh" || log_warning "Could not hand .env back to your user; use 'sudo make pull'."
+    bash "$SCRIPT_DIR/08_fix_permissions.sh" || log_warning "Fixing file permissions reported an error (see above); if .env is not readable, use 'sudo make pull'."
     log_error "Update stopped before restarting the stack. $1"
     exit 1
 }
@@ -167,7 +167,7 @@ fi
 set_telemetry_stage "update_fix_perms"
 log_info "Fixing file permissions..."
 bash "$SCRIPT_DIR/08_fix_permissions.sh" || {
-    log_warning "Failed to fix file permissions. This does not affect the update."
+    log_warning "Fixing file permissions reported an error (see above). The services were updated; follow the message above to fix what it names."
 }
 # --- End of Fix permissions ---
 

@@ -4,7 +4,7 @@
 # =============================================================================
 # This script fixes file ownership when the installer was run with sudo.
 # It detects the real user who invoked the installation and sets proper
-# ownership for all project files.
+# ownership for all project files except the containers' own data directories.
 #
 # Usage: bash scripts/08_fix_permissions.sh
 # =============================================================================
@@ -31,24 +31,45 @@ if [[ "$REAL_USER" == "root" ]]; then
     exit 0
 fi
 
-# Fix ownership of the entire project directory
-if [[ -d "$PROJECT_ROOT" ]]; then
-    log_info "Setting ownership of $PROJECT_ROOT to $REAL_USER:$REAL_GROUP"
+# Data the containers write as their own users: supabase/postgres cannot open files owned by
+# the host user. The git-tracked files next to them still go to the user.
+SUPABASE_DB_DATA="$PROJECT_ROOT/supabase/docker/volumes/db/data"
+CONTAINER_OWNED_DIRS=("$SUPABASE_DB_DATA" "$PROJECT_ROOT/supabase/docker/volumes/storage")
+# Neo4j (neo4j:latest, uid 7474) bind-mounts ./neo4j/data and ./neo4j/logs and writes to them;
+# chowning them to the host user breaks checkpoint rotation and crash-loops it. config/plugins
+# are read-only to neo4j, so they stay host-owned. (fork)
+CONTAINER_OWNED_DIRS+=("$PROJECT_ROOT/neo4j/data" "$PROJECT_ROOT/neo4j/logs")
+# Dify: the default stack plus the optional vector stores of its compose file
+for dir in db/data mysql/data redis/data app/storage plugin_daemon sandbox/dependencies \
+           weaviate qdrant chroma pgvector/data pgvecto_rs/data milvus/etcd milvus/milvus \
+           milvus/minio opensearch/data myscale/data myscale/log couchbase/data \
+           matrixone/data oceanbase/data opengauss/data iris seekdb unstructured; do
+    CONTAINER_OWNED_DIRS+=("$PROJECT_ROOT/dify/docker/volumes/$dir")
+done
 
-    # Exclude runtime data dirs that must stay owned by their container UID, not
-    # the host user. Supabase runs Postgres as uid 105 inside the container, so
-    # its PGDATA (supabase/docker/volumes/db/data) must NOT be chowned to the host
-    # user - otherwise Postgres backends fail with "could not open file
-    # global/pg_filenode.map: Permission denied" and PostgREST stays unhealthy.
-    # Neo4j (neo4j:latest) runs as uid 7474 and bind-mounts ./neo4j/data and
-    # ./neo4j/logs, which it writes to; chowning them to the host user breaks
-    # checkpoint rotation and crash-loops the container. config/plugins are only
-    # read by neo4j, so they can stay host-owned. (fork)
-    find "$PROJECT_ROOT" \
-        -path "$PROJECT_ROOT/supabase/docker/volumes/db/data" -prune -o \
-        -path "$PROJECT_ROOT/neo4j/data" -prune -o \
-        -path "$PROJECT_ROOT/neo4j/logs" -prune -o \
-        -exec chown "$REAL_USER:$REAL_GROUP" {} +
+if [[ -d "$PROJECT_ROOT" ]]; then
+    SUPABASE_REPAIR_FAILED=0
+    # Backstop for Supabase Postgres data an earlier run gave the host user: recreating supabase-db
+    # fixes it, a running one keeps failing until then. A symlinked data directory is left alone.
+    if [[ -d "$SUPABASE_DB_DATA" && ! -L "$SUPABASE_DB_DATA" ]] && \
+       pg_uid=$(docker exec supabase-db id -u postgres 2>/dev/null) && \
+       [[ "$pg_uid" =~ ^[0-9]+$ ]] && \
+       [[ -n "$(find "$SUPABASE_DB_DATA" ! -user "$pg_uid" -print -quit)" ]]; then
+        log_warning "Supabase Postgres data files are not owned by the container's postgres user (uid $pg_uid), restoring them..."
+        if chown -R "$pg_uid" "$SUPABASE_DB_DATA" && chmod 700 "$SUPABASE_DB_DATA"; then
+            log_success "Supabase Postgres data ownership restored. Auth, REST and Realtime reconnect on their own (Docker restarts them)."
+        else
+            log_error "Could not restore $SUPABASE_DB_DATA - Supabase auth, REST and Realtime keep failing until its files belong to uid $pg_uid (chown -R $pg_uid, chmod 700 on the directory)."
+            SUPABASE_REPAIR_FAILED=1
+        fi
+    fi
+
+    log_info "Setting ownership of $PROJECT_ROOT to $REAL_USER:$REAL_GROUP"
+    prune_args=()
+    for dir in "${CONTAINER_OWNED_DIRS[@]}"; do
+        prune_args+=(-path "$dir" -prune -o)
+    done
+    find "$PROJECT_ROOT" "${prune_args[@]}" -exec chown -h "$REAL_USER:$REAL_GROUP" {} +
 
     # Ensure .env has restricted permissions (readable only by owner)
     if [[ -f "$ENV_FILE" ]]; then
@@ -60,6 +81,10 @@ if [[ -d "$PROJECT_ROOT" ]]; then
     chmod +x "$SCRIPT_DIR"/*.sh 2>/dev/null || true
     chmod +x "$PROJECT_ROOT"/*.py 2>/dev/null || true
 
+    # The rest of the project is fixed either way; the failed repair still makes this script exit 1.
+    if [[ $SUPABASE_REPAIR_FAILED -eq 1 ]]; then
+        exit 1
+    fi
     log_success "File permissions fixed successfully!"
 else
     log_error "Project root not found: $PROJECT_ROOT"

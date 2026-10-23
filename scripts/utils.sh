@@ -1064,6 +1064,34 @@ cleanup_legacy_postgresus() {
     fi
 }
 
+# Remove the supabase-kong container Supabase replaced with Envoy: no compose file lists it, so 'down'
+# leaves it holding port 8000. For the restart path, which never pulls the checkout; the installer has its own.
+# Usage: cleanup_legacy_supabase_kong
+cleanup_legacy_supabase_kong() {
+    local container_name="supabase-kong"
+    local listing labels
+    # Decided by the exit code, never by Docker's error wording; stderr stays out of the labels
+    if ! listing=$(docker ps -a --filter "name=$container_name" --format '{{.Names}}'$'\t''{{.Label "com.docker.compose.project"}}/{{.Label "com.docker.compose.service"}}'); then
+        log_error "Could not check for a leftover supabase-kong container (see the Docker error above)."
+        return 1
+    fi
+    # The name filter also matches substrings
+    labels=$(awk -F'\t' -v n="$container_name" '$1 == n {print $2; exit}' <<< "$listing")
+    [ -z "$labels" ] && return 0
+    if [ "$labels" = "localai/kong" ]; then
+        log_info "Found the old Supabase Kong gateway container, removing it so Envoy can bind port 8000..."
+        # Failing here, under the caller's set -e, stops it before 'down' while the stack still runs
+        if ! docker rm -f "$container_name" >/dev/null; then
+            log_error "Could not remove supabase-kong; it still holds port 8000 and Supabase would not start. Remove it manually: docker rm -f $container_name"
+            return 1
+        fi
+        log_success "Legacy supabase-kong container removed."
+    else
+        [ "$labels" = "/" ] && labels="no Compose labels"
+        log_warning "A supabase-kong container not created by this stack ($labels) exists; if it holds port 8000, Supabase's Envoy gateway cannot start."
+    fi
+}
+
 # Clean up the pre-1.13 ComfyUI container (issue #122)
 # The service was renamed from "comfyui" to comfyui-nvidia/-amd/-cpu while the
 # container name stayed "comfyui". 'docker compose down' leaves the old
